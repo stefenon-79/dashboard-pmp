@@ -233,7 +233,38 @@ export default function App() {
   }, [statusFilter])
 
   // Dynamic table filtered list (takes filtered, which respects statusFilter, and applies local column filters)
+  // If stage is CDI or Pré CDI, it implements tracking logic for all active stages of those delayed kits
   const filteredTableItems = useMemo(() => {
+    if (tblEtap === 'CDI' || tblEtap === 'Pré CDI') {
+      const targetStage = tblEtap
+      
+      // Find kits (project + kit name) that have an 'Atrasado' status in the target stage
+      const trackedKitsKeys = new Set<string>()
+      data.forEach(d => {
+        if (d.statusGeral === 'Atrasado' && normalizeEtapa(d.etapa) === targetStage) {
+          const key = `${d.projeto}|||${d.kits}`
+          trackedKitsKeys.add(key)
+        }
+      })
+      
+      // Return all active (Atrasado / Em Produção) records for these same kits
+      return data.filter(d => {
+        const key = `${d.projeto}|||${d.kits}`
+        if (!trackedKitsKeys.has(key)) return false
+        
+        // Show only active processes
+        if (d.statusGeral !== 'Atrasado' && d.statusGeral !== 'Em Produção') return false
+        
+        const matchProj = tblProj === 'todos' || d.projeto === tblProj
+        const matchCli = tblCli === 'todos' || d.cliente === tblCli
+        const matchEquip = tblEquip === 'todos' || d.equipamento === tblEquip
+        const matchKit = tblKit === 'todos' || d.kits === tblKit
+        
+        return matchProj && matchCli && matchEquip && matchKit
+      })
+    }
+
+    // Normal filtering for other stages
     return filtered.filter(d => {
       const matchProj = tblProj === 'todos' || d.projeto === tblProj
       const matchCli = tblCli === 'todos' || d.cliente === tblCli
@@ -242,7 +273,7 @@ export default function App() {
       const matchEtap = tblEtap === 'todos' || normalizeEtapa(d.etapa) === tblEtap
       return matchProj && matchCli && matchEquip && matchKit && matchEtap
     })
-  }, [filtered, tblProj, tblCli, tblEquip, tblKit, tblEtap])
+  }, [filtered, data, tblProj, tblCli, tblEquip, tblKit, tblEtap])
 
   const totalTablePages = useMemo(() => {
     return Math.max(1, Math.ceil(filteredTableItems.length / ITEMS_PER_PAGE))
@@ -279,12 +310,15 @@ export default function App() {
   }, [filtered])
 
   const tableTitle = useMemo(() => {
+    if (tblEtap === 'CDI' || tblEtap === 'Pré CDI') {
+      return `Rastreamento de Kits — Atrasos em ${tblEtap} (${filteredTableItems.length})`
+    }
     if (statusFilter === 'todos') return `Todos os Itens (${filteredTableItems.length})`
     if (statusFilter === 'Atrasado') return `Itens Atrasados (${filteredTableItems.length})`
     if (statusFilter === 'Em Produção') return `Itens Em Produção (${filteredTableItems.length})`
     if (statusFilter === 'Concluído') return `Itens Concluídos (${filteredTableItems.length})`
     return `Itens (${filteredTableItems.length})`
-  }, [statusFilter, filteredTableItems])
+  }, [statusFilter, tblEtap, filteredTableItems])
 
   const tableIcon = useMemo(() => {
     if (statusFilter === 'Atrasado') return <AlertTriangle className="h-5 w-5 text-red-400" />
@@ -585,7 +619,20 @@ export default function App() {
                         <XAxis dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 'medium' }} angle={-30} textAnchor="end" height={70} interval={0} />
                         <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Qtd Itens', angle: -90, position: 'insideLeft', fill: '#94a3b8', style: { textAnchor: 'middle' }, offset: 0 }} />
                         <Tooltip content={<CustomTooltip />} />
-                        <Bar dataKey="Quantidade" fill={paretoColor} name="Qtd Itens" radius={[4, 4, 0, 0]} barSize={24}>
+                        <Bar
+                          dataKey="Quantidade"
+                          fill={paretoColor}
+                          name="Qtd Itens"
+                          radius={[4, 4, 0, 0]}
+                          barSize={24}
+                          onClick={(data) => {
+                            if (data && data.name) {
+                              setTblEtap(data.name)
+                              setTblPage(1)
+                            }
+                          }}
+                          className="cursor-pointer"
+                        >
                           <LabelList dataKey="Quantidade" position="top" fill="#cbd5e1" fontSize={9} style={{ fontWeight: 'bold' }} />
                         </Bar>
                       </BarChart>
@@ -605,6 +652,15 @@ export default function App() {
                     {tableIcon} {tableTitle}
                   </h3>
                 </div>
+
+                {(tblEtap === 'CDI' || tblEtap === 'Pré CDI') && (
+                  <div className="mb-4 p-3.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-300 flex items-start gap-2.5">
+                    <Sparkles className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0 animate-pulse" />
+                    <div>
+                      <strong className="text-white">Rastreamento de Gargalo Ativo ({tblEtap}):</strong> Exibindo todas as etapas ativas (atrasadas ou em produção) para os kits que estão com atraso em <strong>{tblEtap}</strong>. Isso ajuda a rastrear em quais outras etapas do processo esses kits estão concorrendo ou retidos.
+                    </div>
+                  </div>
+                )}
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
