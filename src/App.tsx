@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Cell, LabelList, PieChart, Pie
@@ -117,21 +117,23 @@ export default function App() {
   const [ltGroupBy, setLtGroupBy] = useState<'cliente' | 'conjGeral' | 'equipamento'>('cliente')
   const [ltClienteFilter, setLtClienteFilter] = useState('todos')
 
-  // Local table states (Atrasados)
-  const [atrasadosProj, setAtrasadosProj] = useState('todos')
-  const [atrasadosCli, setAtrasadosCli] = useState('todos')
-  const [atrasadosEquip, setAtrasadosEquip] = useState('todos')
-  const [atrasadosKit, setAtrasadosKit] = useState('todos')
-  const [atrasadosEtap, setAtrasadosEtap] = useState('todos')
-  const [atrasadosPage, setAtrasadosPage] = useState(1)
+  // Local dynamic table states
+  const [tblProj, setTblProj] = useState('todos')
+  const [tblCli, setTblCli] = useState('todos')
+  const [tblEquip, setTblEquip] = useState('todos')
+  const [tblKit, setTblKit] = useState('todos')
+  const [tblEtap, setTblEtap] = useState('todos')
+  const [tblPage, setTblPage] = useState(1)
 
-  // Local table states (Em Produção)
-  const [producaoProj, setProducaoProj] = useState('todos')
-  const [producaoCli, setProducaoCli] = useState('todos')
-  const [producaoEquip, setProducaoEquip] = useState('todos')
-  const [producaoKit, setProducaoKit] = useState('todos')
-  const [producaoEtap, setProducaoEtap] = useState('todos')
-  const [producaoPage, setProducaoPage] = useState(1)
+  // Reset table filters when statusFilter changes
+  useEffect(() => {
+    setTblProj('todos')
+    setTblCli('todos')
+    setTblEquip('todos')
+    setTblKit('todos')
+    setTblEtap('todos')
+    setTblPage(1)
+  }, [statusFilter])
 
   const ITEMS_PER_PAGE = 15
 
@@ -146,68 +148,31 @@ export default function App() {
     return Array.from(set).sort()
   }, [])
 
-  // Unique options for Atrasados table column dropdowns
-  const uniqueAtrasadosProj = useMemo(() => {
-    const list = data.filter(d => d.statusGeral === 'Atrasado').map(d => d.projeto).filter(Boolean)
-    return Array.from(new Set(list)).sort()
-  }, [])
-
-  const uniqueAtrasadosCli = useMemo(() => {
-    const list = data.filter(d => d.statusGeral === 'Atrasado').map(d => d.cliente).filter(Boolean)
-    return Array.from(new Set(list)).sort()
-  }, [])
-
-  const uniqueAtrasadosEquip = useMemo(() => {
-    const list = data.filter(d => d.statusGeral === 'Atrasado').map(d => d.equipamento).filter(Boolean)
-    return Array.from(new Set(list)).sort()
-  }, [])
-
-  const uniqueAtrasadosKits = useMemo(() => {
-    const list = data.filter(d => d.statusGeral === 'Atrasado').map(d => d.kits).filter(Boolean)
-    return Array.from(new Set(list)).sort()
-  }, [])
-
-  // Unique options for Em Produção table column dropdowns
-  const uniqueProducaoProj = useMemo(() => {
-    const list = data.filter(d => d.statusGeral === 'Em Produção').map(d => d.projeto).filter(Boolean)
-    return Array.from(new Set(list)).sort()
-  }, [])
-
-  const uniqueProducaoCli = useMemo(() => {
-    const list = data.filter(d => d.statusGeral === 'Em Produção').map(d => d.cliente).filter(Boolean)
-    return Array.from(new Set(list)).sort()
-  }, [])
-
-  const uniqueProducaoEquip = useMemo(() => {
-    const list = data.filter(d => d.statusGeral === 'Em Produção').map(d => d.equipamento).filter(Boolean)
-    return Array.from(new Set(list)).sort()
-  }, [])
-
-  const uniqueProducaoKits = useMemo(() => {
-    const list = data.filter(d => d.statusGeral === 'Em Produção').map(d => d.kits).filter(Boolean)
-    return Array.from(new Set(list)).sort()
-  }, [])
-
-  // Filtered data
-  const filtered = useMemo(() => {
+  // Base filtered data (Search, Cliente, and Etapa - independent of statusFilter, for global stats & donut)
+  const baseFiltered = useMemo(() => {
     return data.filter(d => {
       const matchSearch = searchQuery === '' ||
         d.projeto.toLowerCase().includes(searchQuery.toLowerCase()) ||
         d.cliente.toLowerCase().includes(searchQuery.toLowerCase()) ||
         d.equipamento.toLowerCase().includes(searchQuery.toLowerCase()) ||
         d.kits.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchStatus = statusFilter === 'todos' || d.statusGeral === statusFilter
       const matchCliente = clienteFilter === 'todos' || d.cliente === clienteFilter
       const matchEtapa = etapaFilter === 'todos' || normalizeEtapa(d.etapa) === etapaFilter
-      return matchSearch && matchStatus && matchCliente && matchEtapa
+      return matchSearch && matchCliente && matchEtapa
     })
-  }, [searchQuery, statusFilter, clienteFilter, etapaFilter])
+  }, [searchQuery, clienteFilter, etapaFilter])
 
-  // KPIs
-  const totalKits = filtered.length
-  const concluidos = filtered.filter(d => d.statusGeral === 'Concluído').length
-  const emProducao = filtered.filter(d => d.statusGeral === 'Em Produção').length
-  const atrasados = filtered.filter(d => d.statusGeral === 'Atrasado').length
+  // Filtered data (applied statusFilter, for the table)
+  const filtered = useMemo(() => {
+    if (statusFilter === 'todos') return baseFiltered
+    return baseFiltered.filter(d => d.statusGeral === statusFilter)
+  }, [baseFiltered, statusFilter])
+
+  // KPIs (computed from baseFiltered so values don't collapse to 100%/0% on click)
+  const totalKits = baseFiltered.length
+  const concluidos = baseFiltered.filter(d => d.statusGeral === 'Concluído').length
+  const emProducao = baseFiltered.filter(d => d.statusGeral === 'Em Produção').length
+  const atrasados = baseFiltered.filter(d => d.statusGeral === 'Atrasado').length
   const pctConcluido = totalKits > 0 ? Math.round((concluidos / totalKits) * 100) : 0
   const pctEmProducao = totalKits > 0 ? Math.round((emProducao / totalKits) * 100) : 0
   const pctAtrasados = totalKits > 0 ? Math.round((atrasados / totalKits) * 100) : 0
@@ -215,7 +180,7 @@ export default function App() {
   // Chart: Status distribution (excluding Concluído to show only active pipeline)
   const statusChartData = useMemo(() => {
     const counts: Record<string, number> = {}
-    filtered.forEach(d => {
+    baseFiltered.forEach(d => {
       const s = d.statusGeral || 'Indefinido'
       counts[s] = (counts[s] || 0) + 1
     })
@@ -223,16 +188,21 @@ export default function App() {
       .filter(([k]) => k !== '0' && k !== 'Indefinido' && k !== 'Concluído')
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
-  }, [filtered])
+  }, [baseFiltered])
 
-  // Chart: Pareto de Etapas Atrasadas
+  // Chart: Pareto de Etapas (Atrasados or Em Produção or Concluído)
   const paretoEtapasData = useMemo(() => {
-    const atrasadosList = filtered.filter(d => d.statusGeral === 'Atrasado')
+    const activeStatus = statusFilter === 'todos' ? 'Atrasado' : statusFilter
+    const listToCount = baseFiltered.filter(d => d.statusGeral === activeStatus)
+    
     const counts: Record<string, number> = {}
-    atrasadosList.forEach(d => {
+    listToCount.forEach(d => {
       const e = normalizeEtapa(d.etapa)
-      counts[e] = (counts[e] || 0) + 1
+      if (e && e !== 'Outros') {
+        counts[e] = (counts[e] || 0) + 1
+      }
     })
+    
     const sorted = Object.entries(counts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
@@ -246,52 +216,82 @@ export default function App() {
         'Quantidade': item.value,
         'Pct Acumulado': total > 0 ? Math.round((acc / total) * 100) : 0
       }
+    }).slice(0, 10)
+  }, [baseFiltered, statusFilter])
+
+  const paretoTitle = useMemo(() => {
+    const activeStatus = statusFilter === 'todos' ? 'Atrasado' : statusFilter
+    if (activeStatus === 'Atrasado') return "Pareto de Etapas mais Atrasadas"
+    if (activeStatus === 'Em Produção') return "Pareto de Etapas em Produção"
+    if (activeStatus === 'Concluído') return "Pareto de Etapas Concluídas"
+    return "Pareto de Etapas"
+  }, [statusFilter])
+
+  const paretoColor = useMemo(() => {
+    const activeStatus = statusFilter === 'todos' ? 'Atrasado' : statusFilter
+    return STATUS_COLORS[activeStatus] || '#6366f1'
+  }, [statusFilter])
+
+  // Dynamic table filtered list (takes filtered, which respects statusFilter, and applies local column filters)
+  const filteredTableItems = useMemo(() => {
+    return filtered.filter(d => {
+      const matchProj = tblProj === 'todos' || d.projeto === tblProj
+      const matchCli = tblCli === 'todos' || d.cliente === tblCli
+      const matchEquip = tblEquip === 'todos' || d.equipamento === tblEquip
+      const matchKit = tblKit === 'todos' || d.kits === tblKit
+      const matchEtap = tblEtap === 'todos' || normalizeEtapa(d.etapa) === tblEtap
+      return matchProj && matchCli && matchEquip && matchKit && matchEtap
     })
+  }, [filtered, tblProj, tblCli, tblEquip, tblKit, tblEtap])
+
+  const totalTablePages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredTableItems.length / ITEMS_PER_PAGE))
+  }, [filteredTableItems])
+
+  const paginatedTable = useMemo(() => {
+    return filteredTableItems.slice((tblPage - 1) * ITEMS_PER_PAGE, tblPage * ITEMS_PER_PAGE)
+  }, [filteredTableItems, tblPage])
+
+  // Unique options for the dynamic table column dropdowns
+  const uniqueTableProj = useMemo(() => {
+    const list = filtered.map(d => d.projeto).filter(Boolean)
+    return Array.from(new Set(list)).sort()
   }, [filtered])
 
-  // Delayed items filtered list
-  const filteredDelayedItems = useMemo(() => {
-    return filtered
-      .filter(d => d.statusGeral === 'Atrasado')
-      .filter(d => {
-        const matchProj = atrasadosProj === 'todos' || d.projeto === atrasadosProj
-        const matchCli = atrasadosCli === 'todos' || d.cliente === atrasadosCli
-        const matchEquip = atrasadosEquip === 'todos' || d.equipamento === atrasadosEquip
-        const matchKit = atrasadosKit === 'todos' || d.kits === atrasadosKit
-        const matchEtap = atrasadosEtap === 'todos' || normalizeEtapa(d.etapa) === atrasadosEtap
-        return matchProj && matchCli && matchEquip && matchKit && matchEtap
-      })
-  }, [filtered, atrasadosProj, atrasadosCli, atrasadosEquip, atrasadosKit, atrasadosEtap])
+  const uniqueTableCli = useMemo(() => {
+    const list = filtered.map(d => d.cliente).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [filtered])
 
-  // Em Produção items filtered list
-  const filteredProducaoItems = useMemo(() => {
-    return filtered
-      .filter(d => d.statusGeral === 'Em Produção')
-      .filter(d => {
-        const matchProj = producaoProj === 'todos' || d.projeto === producaoProj
-        const matchCli = producaoCli === 'todos' || d.cliente === producaoCli
-        const matchEquip = producaoEquip === 'todos' || d.equipamento === producaoEquip
-        const matchKit = producaoKit === 'todos' || d.kits === producaoKit
-        const matchEtap = producaoEtap === 'todos' || normalizeEtapa(d.etapa) === producaoEtap
-        return matchProj && matchCli && matchEquip && matchKit && matchEtap
-      })
-  }, [filtered, producaoProj, producaoCli, producaoEquip, producaoKit, producaoEtap])
+  const uniqueTableEquip = useMemo(() => {
+    const list = filtered.map(d => d.equipamento).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [filtered])
 
-  const totalAtrasadosPages = useMemo(() => {
-    return Math.max(1, Math.ceil(filteredDelayedItems.length / ITEMS_PER_PAGE))
-  }, [filteredDelayedItems])
+  const uniqueTableKits = useMemo(() => {
+    const list = filtered.map(d => d.kits).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [filtered])
 
-  const paginatedAtrasados = useMemo(() => {
-    return filteredDelayedItems.slice((atrasadosPage - 1) * ITEMS_PER_PAGE, atrasadosPage * ITEMS_PER_PAGE)
-  }, [filteredDelayedItems, atrasadosPage])
+  const uniqueTableEtapas = useMemo(() => {
+    const list = filtered.map(d => normalizeEtapa(d.etapa)).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [filtered])
 
-  const totalProducaoPages = useMemo(() => {
-    return Math.max(1, Math.ceil(filteredProducaoItems.length / ITEMS_PER_PAGE))
-  }, [filteredProducaoItems])
+  const tableTitle = useMemo(() => {
+    if (statusFilter === 'todos') return `Todos os Itens (${filteredTableItems.length})`
+    if (statusFilter === 'Atrasado') return `Itens Atrasados (${filteredTableItems.length})`
+    if (statusFilter === 'Em Produção') return `Itens Em Produção (${filteredTableItems.length})`
+    if (statusFilter === 'Concluído') return `Itens Concluídos (${filteredTableItems.length})`
+    return `Itens (${filteredTableItems.length})`
+  }, [statusFilter, filteredTableItems])
 
-  const paginatedProducao = useMemo(() => {
-    return filteredProducaoItems.slice((producaoPage - 1) * ITEMS_PER_PAGE, producaoPage * ITEMS_PER_PAGE)
-  }, [filteredProducaoItems, producaoPage])
+  const tableIcon = useMemo(() => {
+    if (statusFilter === 'Atrasado') return <AlertTriangle className="h-5 w-5 text-red-400" />
+    if (statusFilter === 'Em Produção') return <Loader2 className="h-5 w-5 text-indigo-400 animate-spin" />
+    if (statusFilter === 'Concluído') return <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+    return <FolderKanban className="h-5 w-5 text-indigo-400" />
+  }, [statusFilter])
 
   // --- Lead Time Calculation ---
   const leadTimeData = useMemo(() => {
@@ -502,10 +502,42 @@ export default function App() {
 
               {/* KPIs */}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <KpiCard label="Total de Kits" value={totalKits.toLocaleString()} icon={<FolderKanban className="h-5 w-5" />} color="indigo" sub="Registros filtrados" />
-                <KpiCard label="Concluídos" value={`${pctConcluido}%`} icon={<CheckCircle2 className="h-5 w-5" />} color="emerald" sub={`${concluidos.toLocaleString()} kits finalizados`} />
-                <KpiCard label="Em Produção" value={`${pctEmProducao}%`} icon={<Loader2 className="h-5 w-5" />} color="blue" sub={`${emProducao.toLocaleString()} kits em produção`} />
-                <KpiCard label="Atrasados" value={`${pctAtrasados}%`} icon={<AlertTriangle className="h-5 w-5" />} color="red" sub={`${atrasados.toLocaleString()} kits atrasados`} />
+                <KpiCard
+                  label="Total de Kits"
+                  value={totalKits.toLocaleString()}
+                  icon={<FolderKanban className="h-5 w-5" />}
+                  color="indigo"
+                  sub="Registros filtrados"
+                  active={statusFilter === 'todos'}
+                  onClick={() => setStatusFilter('todos')}
+                />
+                <KpiCard
+                  label="Concluídos"
+                  value={`${pctConcluido}%`}
+                  icon={<CheckCircle2 className="h-5 w-5" />}
+                  color="emerald"
+                  sub={`${concluidos.toLocaleString()} kits finalizados`}
+                  active={statusFilter === 'Concluído'}
+                  onClick={() => setStatusFilter('Concluído')}
+                />
+                <KpiCard
+                  label="Em Produção"
+                  value={`${pctEmProducao}%`}
+                  icon={<Loader2 className="h-5 w-5" />}
+                  color="blue"
+                  sub={`${emProducao.toLocaleString()} kits em produção`}
+                  active={statusFilter === 'Em Produção'}
+                  onClick={() => setStatusFilter('Em Produção')}
+                />
+                <KpiCard
+                  label="Atrasados"
+                  value={`${pctAtrasados}%`}
+                  icon={<AlertTriangle className="h-5 w-5" />}
+                  color="red"
+                  sub={`${atrasados.toLocaleString()} kits atrasados`}
+                  active={statusFilter === 'Atrasado'}
+                  onClick={() => setStatusFilter('Atrasado')}
+                />
               </div>
 
               {/* Charts row */}
@@ -544,8 +576,8 @@ export default function App() {
                   </div>
                 </ChartCard>
 
-                {/* Pareto Etapas Atrasadas */}
-                <ChartCard title="Pareto de Etapas mais Atrasadas" className="lg:col-span-2">
+                {/* Pareto Etapas */}
+                <ChartCard title={paretoTitle} className="lg:col-span-2">
                   {paretoEtapasData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={250}>
                       <BarChart data={paretoEtapasData} margin={{ left: -10, right: 10, top: 15 }}>
@@ -553,24 +585,24 @@ export default function App() {
                         <XAxis dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 'medium' }} angle={-30} textAnchor="end" height={70} interval={0} />
                         <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Qtd Itens', angle: -90, position: 'insideLeft', fill: '#94a3b8', style: { textAnchor: 'middle' }, offset: 0 }} />
                         <Tooltip content={<CustomTooltip />} />
-                        <Bar dataKey="Quantidade" fill="#ef4444" name="Qtd Atrasos" radius={[4, 4, 0, 0]} barSize={24}>
+                        <Bar dataKey="Quantidade" fill={paretoColor} name="Qtd Itens" radius={[4, 4, 0, 0]} barSize={24}>
                           <LabelList dataKey="Quantidade" position="top" fill="#cbd5e1" fontSize={9} style={{ fontWeight: 'bold' }} />
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
                     <div className="flex h-[250px] items-center justify-center text-xs text-slate-500">
-                      Nenhum item atrasado com os filtros aplicados.
+                      Nenhum item encontrado com os filtros aplicados.
                     </div>
                   )}
                 </ChartCard>
               </div>
 
-              {/* Delayed items table */}
+              {/* Dynamic Table (replaces both old tables) */}
               <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5 text-red-400" /> Itens Atrasados ({filteredDelayedItems.length})
+                    {tableIcon} {tableTitle}
                   </h3>
                 </div>
 
@@ -589,52 +621,52 @@ export default function App() {
                       <tr className="border-b border-slate-800/80 bg-slate-900/40">
                         <th className="p-1.5">
                           <select
-                            value={atrasadosProj}
-                            onChange={e => { setAtrasadosProj(e.target.value); setAtrasadosPage(1); }}
+                            value={tblProj}
+                            onChange={e => { setTblProj(e.target.value); setTblPage(1); }}
                             className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
                           >
                             <option value="todos">Todos</option>
-                            {uniqueAtrasadosProj.map(p => <option key={p} value={p}>{p}</option>)}
+                            {uniqueTableProj.map(p => <option key={p} value={p}>{p}</option>)}
                           </select>
                         </th>
                         <th className="p-1.5">
                           <select
-                            value={atrasadosCli}
-                            onChange={e => { setAtrasadosCli(e.target.value); setAtrasadosPage(1); }}
+                            value={tblCli}
+                            onChange={e => { setTblCli(e.target.value); setTblPage(1); }}
                             className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
                           >
                             <option value="todos">Todos</option>
-                            {uniqueAtrasadosCli.map(c => <option key={c} value={c}>{c}</option>)}
+                            {uniqueTableCli.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </th>
                         <th className="p-1.5">
                           <select
-                            value={atrasadosEquip}
-                            onChange={e => { setAtrasadosEquip(e.target.value); setAtrasadosPage(1); }}
+                            value={tblEquip}
+                            onChange={e => { setTblEquip(e.target.value); setTblPage(1); }}
                             className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
                           >
                             <option value="todos">Todos</option>
-                            {uniqueAtrasadosEquip.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                            {uniqueTableEquip.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                           </select>
                         </th>
                         <th className="p-1.5">
                           <select
-                            value={atrasadosKit}
-                            onChange={e => { setAtrasadosKit(e.target.value); setAtrasadosPage(1); }}
+                            value={tblKit}
+                            onChange={e => { setTblKit(e.target.value); setTblPage(1); }}
                             className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
                           >
                             <option value="todos">Todos</option>
-                            {uniqueAtrasadosKits.map(k => <option key={k} value={k}>{k}</option>)}
+                            {uniqueTableKits.map(k => <option key={k} value={k}>{k}</option>)}
                           </select>
                         </th>
                         <th className="p-1.5">
                           <select
-                            value={atrasadosEtap}
-                            onChange={e => { setAtrasadosEtap(e.target.value); setAtrasadosPage(1); }}
+                            value={tblEtap}
+                            onChange={e => { setTblEtap(e.target.value); setTblPage(1); }}
                             className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
                           >
                             <option value="todos">Todas</option>
-                            {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
+                            {uniqueTableEtapas.map(e => <option key={e} value={e}>{e}</option>)}
                           </select>
                         </th>
                         <th className="p-1.5"></th>
@@ -642,22 +674,27 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedAtrasados.length > 0 ? (
-                        paginatedAtrasados.map((item, i) => (
-                          <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                            <td className="py-2.5 px-3 font-medium text-slate-200">{item.projeto}</td>
-                            <td className="py-2.5 px-3 text-slate-300">{item.cliente}</td>
-                            <td className="py-2.5 px-3 text-slate-400 max-w-[200px] truncate">{item.equipamento}</td>
-                            <td className="py-2.5 px-3 text-slate-400 max-w-[150px] truncate">{item.kits}</td>
-                            <td className="py-2.5 px-3"><span className="bg-slate-800 px-2 py-0.5 rounded text-slate-300">{normalizeEtapa(item.etapa)}</span></td>
-                            <td className="py-2.5 px-3 text-center text-blue-400 font-semibold">{item.programado}</td>
-                            <td className="py-2.5 px-3 text-center text-red-400 font-semibold">{item.realizadoSemana || '-'}</td>
-                          </tr>
-                        ))
+                      {paginatedTable.length > 0 ? (
+                        paginatedTable.map((item, i) => {
+                          const isAtrasado = item.statusGeral === 'Atrasado'
+                          return (
+                            <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                              <td className="py-2.5 px-3 font-medium text-slate-200">{item.projeto}</td>
+                              <td className="py-2.5 px-3 text-slate-300">{item.cliente}</td>
+                              <td className="py-2.5 px-3 text-slate-400 max-w-[200px] truncate">{item.equipamento}</td>
+                              <td className="py-2.5 px-3 text-slate-400 max-w-[150px] truncate">{item.kits}</td>
+                              <td className="py-2.5 px-3"><span className="bg-slate-800 px-2 py-0.5 rounded text-slate-300">{normalizeEtapa(item.etapa)}</span></td>
+                              <td className="py-2.5 px-3 text-center text-blue-400 font-semibold">{item.programado}</td>
+                              <td className={`py-2.5 px-3 text-center font-semibold ${isAtrasado ? 'text-red-400' : 'text-slate-400'}`}>
+                                {item.realizadoSemana || '-'}
+                              </td>
+                            </tr>
+                          )
+                        })
                       ) : (
                         <tr>
                           <td colSpan={7} className="py-8 text-center text-slate-500">
-                            Nenhum item atrasado encontrado.
+                            Nenhum item encontrado.
                           </td>
                         </tr>
                       )}
@@ -665,142 +702,20 @@ export default function App() {
                   </table>
                 </div>
 
-                {totalAtrasadosPages > 1 && (
+                {totalTablePages > 1 && (
                   <div className="flex items-center justify-between mt-4 text-xs text-slate-400 border-t border-slate-800/50 pt-4">
-                    <span>Mostrando página {atrasadosPage} de {totalAtrasadosPages} ({filteredDelayedItems.length} itens)</span>
+                    <span>Mostrando página {tblPage} de {totalTablePages} ({filteredTableItems.length} itens)</span>
                     <div className="flex items-center gap-1">
                       <button
-                        disabled={atrasadosPage === 1}
-                        onClick={() => setAtrasadosPage(p => Math.max(1, p - 1))}
+                        disabled={tblPage === 1}
+                        onClick={() => setTblPage(p => Math.max(1, p - 1))}
                         className="px-2.5 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 disabled:opacity-40 disabled:hover:bg-slate-800/60 transition-colors"
                       >
                         Anterior
                       </button>
                       <button
-                        disabled={atrasadosPage === totalAtrasadosPages}
-                        onClick={() => setAtrasadosPage(p => Math.min(totalAtrasadosPages, p + 1))}
-                        className="px-2.5 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 disabled:opacity-40 disabled:hover:bg-slate-800/60 transition-colors"
-                      >
-                        Próxima
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Em Produção items table */}
-              <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Loader2 className="h-5 w-5 text-indigo-400 animate-spin" /> Itens Em Produção ({filteredProducaoItems.length})
-                  </h3>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
-                        <th className="py-2.5 px-3 text-left font-semibold w-[120px]">Projeto</th>
-                        <th className="py-2.5 px-3 text-left font-semibold w-[160px]">Cliente</th>
-                        <th className="py-2.5 px-3 text-left font-semibold">Equipamento</th>
-                        <th className="py-2.5 px-3 text-left font-semibold w-[120px]">Kit</th>
-                        <th className="py-2.5 px-3 text-left font-semibold w-[160px]">Etapa</th>
-                        <th className="py-2.5 px-3 text-center font-semibold w-[80px]">Sem. Prog.</th>
-                        <th className="py-2.5 px-3 text-center font-semibold w-[80px]">Sem. Real</th>
-                      </tr>
-                      <tr className="border-b border-slate-800/80 bg-slate-900/40">
-                        <th className="p-1.5">
-                          <select
-                            value={producaoProj}
-                            onChange={e => { setProducaoProj(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="todos">Todos</option>
-                            {uniqueProducaoProj.map(p => <option key={p} value={p}>{p}</option>)}
-                          </select>
-                        </th>
-                        <th className="p-1.5">
-                          <select
-                            value={producaoCli}
-                            onChange={e => { setProducaoCli(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="todos">Todos</option>
-                            {uniqueProducaoCli.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        </th>
-                        <th className="p-1.5">
-                          <select
-                            value={producaoEquip}
-                            onChange={e => { setProducaoEquip(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="todos">Todos</option>
-                            {uniqueProducaoEquip.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-                          </select>
-                        </th>
-                        <th className="p-1.5">
-                          <select
-                            value={producaoKit}
-                            onChange={e => { setProducaoKit(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="todos">Todos</option>
-                            {uniqueProducaoKits.map(k => <option key={k} value={k}>{k}</option>)}
-                          </select>
-                        </th>
-                        <th className="p-1.5">
-                          <select
-                            value={producaoEtap}
-                            onChange={e => { setProducaoEtap(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          >
-                            <option value="todos">Todas</option>
-                            {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
-                          </select>
-                        </th>
-                        <th className="p-1.5"></th>
-                        <th className="p-1.5"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedProducao.length > 0 ? (
-                        paginatedProducao.map((item, i) => (
-                          <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                            <td className="py-2.5 px-3 font-medium text-slate-200">{item.projeto}</td>
-                            <td className="py-2.5 px-3 text-slate-300">{item.cliente}</td>
-                            <td className="py-2.5 px-3 text-slate-400 max-w-[200px] truncate">{item.equipamento}</td>
-                            <td className="py-2.5 px-3 text-slate-400 max-w-[150px] truncate">{item.kits}</td>
-                            <td className="py-2.5 px-3"><span className="bg-slate-800 px-2 py-0.5 rounded text-slate-300">{normalizeEtapa(item.etapa)}</span></td>
-                            <td className="py-2.5 px-3 text-center text-blue-400 font-semibold">{item.programado}</td>
-                            <td className="py-2.5 px-3 text-center text-slate-400 font-semibold">{item.realizadoSemana || '-'}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={7} className="py-8 text-center text-slate-500">
-                            Nenhum item em produção encontrado.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {totalProducaoPages > 1 && (
-                  <div className="flex items-center justify-between mt-4 text-xs text-slate-400 border-t border-slate-800/50 pt-4">
-                    <span>Mostrando página {producaoPage} de {totalProducaoPages} ({filteredProducaoItems.length} itens)</span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        disabled={producaoPage === 1}
-                        onClick={() => setProducaoPage(p => Math.max(1, p - 1))}
-                        className="px-2.5 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 disabled:opacity-40 disabled:hover:bg-slate-800/60 transition-colors"
-                      >
-                        Anterior
-                      </button>
-                      <button
-                        disabled={producaoPage === totalProducaoPages}
-                        onClick={() => setProducaoPage(p => Math.min(totalProducaoPages, p + 1))}
+                        disabled={tblPage === totalTablePages}
+                        onClick={() => setTblPage(p => Math.min(totalTablePages, p + 1))}
                         className="px-2.5 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 disabled:opacity-40 disabled:hover:bg-slate-800/60 transition-colors"
                       >
                         Próxima
@@ -919,16 +834,35 @@ export default function App() {
 }
 
 // --- Reusable components ---
-function KpiCard({ label, value, icon, color, sub }: { label: string; value: string; icon: React.ReactNode; color: string; sub: string }) {
-  const colorMap: Record<string, { bg: string; text: string; glow: string }> = {
-    indigo: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', glow: 'bg-indigo-600/5' },
-    emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', glow: 'bg-emerald-600/5' },
-    blue: { bg: 'bg-blue-500/10', text: 'text-blue-400', glow: 'bg-blue-600/5' },
-    red: { bg: 'bg-red-500/10', text: 'text-red-400', glow: 'bg-red-600/5' },
+function KpiCard({
+  label,
+  value,
+  icon,
+  color,
+  sub,
+  active,
+  onClick
+}: {
+  label: string
+  value: string
+  icon: React.ReactNode
+  color: string
+  sub: string
+  active?: boolean
+  onClick?: () => void
+}) {
+  const colorMap: Record<string, { bg: string; text: string; glow: string; border: string }> = {
+    indigo: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', glow: 'bg-indigo-600/5', border: 'border-indigo-500/80 shadow-lg shadow-indigo-500/5' },
+    emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', glow: 'bg-emerald-600/5', border: 'border-emerald-500/80 shadow-lg shadow-emerald-500/5' },
+    blue: { bg: 'bg-blue-500/10', text: 'text-blue-400', glow: 'bg-blue-600/5', border: 'border-blue-500/80 shadow-lg shadow-blue-500/5' },
+    red: { bg: 'bg-red-500/10', text: 'text-red-400', glow: 'bg-red-600/5', border: 'border-red-500/80 shadow-lg shadow-red-500/5' },
   }
   const c = colorMap[color] || colorMap.indigo
   return (
-    <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 relative overflow-hidden group">
+    <div
+      onClick={onClick}
+      className={`bg-[#12141c] border ${active ? c.border : 'border-slate-800/80'} rounded-2xl p-6 relative overflow-hidden group transition-all duration-300 ${onClick ? 'cursor-pointer hover:border-slate-700' : ''}`}
+    >
       <div className={`absolute top-0 right-0 h-28 w-28 ${c.glow} rounded-full blur-2xl -mr-4 -mt-4 group-hover:opacity-150 transition-opacity`}></div>
       <div className="flex items-center justify-between">
         <span className="text-sm font-bold text-slate-400 uppercase tracking-wider">{label}</span>
