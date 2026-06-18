@@ -238,28 +238,50 @@ export default function App() {
     if (tblEtap === 'CDI' || tblEtap === 'Pré CDI') {
       const targetStage = tblEtap
       
-      // Find kits (project + kit name) that have an 'Atrasado' status in the target stage
-      const trackedKitsKeys = new Set<string>()
+      // Group all active records (Atrasado or Em Produção) by kit key
+      const activeRecordsByKit = new Map<string, PmpRecord[]>()
       data.forEach(d => {
-        if (d.statusGeral === 'Atrasado' && normalizeEtapa(d.etapa) === targetStage) {
+        if (d.statusGeral === 'Atrasado' || d.statusGeral === 'Em Produção') {
           const key = `${d.projeto}|||${d.kits}`
-          trackedKitsKeys.add(key)
+          if (!activeRecordsByKit.has(key)) {
+            activeRecordsByKit.set(key, [])
+          }
+          activeRecordsByKit.get(key)!.push(d)
         }
       })
       
-      // Return all active (Atrasado / Em Produção) records for these same kits
-      return data.filter(d => {
-        const key = `${d.projeto}|||${d.kits}`
-        if (!trackedKitsKeys.has(key)) return false
-        
-        // Show only active processes
-        if (d.statusGeral !== 'Atrasado' && d.statusGeral !== 'Em Produção') return false
-        
+      // Identify kits that have an 'Atrasado' record in the target stage (CDI or Pré CDI)
+      const targetKits = new Set<string>()
+      activeRecordsByKit.forEach((records, key) => {
+        const hasDelayedTarget = records.some(r => r.statusGeral === 'Atrasado' && normalizeEtapa(r.etapa) === targetStage)
+        if (hasDelayedTarget) {
+          targetKits.add(key)
+        }
+      })
+      
+      // Build the list of records based on the user's rule:
+      // - If the kit only has 1 active stage: keep it (it is the CDI / Pré CDI row itself)
+      // - If the kit repeats: keep only the records in OTHER stages (excluding CDI / Pré CDI)
+      const trackingList: PmpRecord[] = []
+      targetKits.forEach(key => {
+        const records = activeRecordsByKit.get(key) || []
+        if (records.length === 1) {
+          trackingList.push(records[0])
+        } else if (records.length > 1) {
+          records.forEach(r => {
+            if (normalizeEtapa(r.etapa) !== targetStage) {
+              trackingList.push(r)
+            }
+          })
+        }
+      })
+      
+      // Apply table filters on the tracking list
+      return trackingList.filter(d => {
         const matchProj = tblProj === 'todos' || d.projeto === tblProj
         const matchCli = tblCli === 'todos' || d.cliente === tblCli
         const matchEquip = tblEquip === 'todos' || d.equipamento === tblEquip
         const matchKit = tblKit === 'todos' || d.kits === tblKit
-        
         return matchProj && matchCli && matchEquip && matchKit
       })
     }
