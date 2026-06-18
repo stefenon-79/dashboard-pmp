@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  BarChart, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Cell
 } from 'recharts'
 import {
@@ -143,16 +143,28 @@ export default function App() {
       .sort((a, b) => b.value - a.value)
   }, [filtered])
 
-  // Chart: Top 10 Clientes
-  const topClientesData = useMemo(() => {
+  // Chart: Pareto de Etapas Atrasadas
+  const paretoEtapasData = useMemo(() => {
+    const atrasadosList = filtered.filter(d => d.statusGeral === 'Atrasado')
     const counts: Record<string, number> = {}
-    filtered.forEach(d => {
-      if (d.cliente) counts[d.cliente] = (counts[d.cliente] || 0) + 1
+    atrasadosList.forEach(d => {
+      const e = normalizeEtapa(d.etapa)
+      counts[e] = (counts[e] || 0) + 1
     })
-    return Object.entries(counts)
+    const sorted = Object.entries(counts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10)
+    
+    const total = sorted.reduce((sum, item) => sum + item.value, 0)
+    let acc = 0
+    return sorted.map(item => {
+      acc += item.value
+      return {
+        name: item.name,
+        'Quantidade': item.value,
+        'Pct Acumulado': total > 0 ? Math.round((acc / total) * 100) : 0
+      }
+    })
   }, [filtered])
 
   // Chart: Kits por Etapa
@@ -246,7 +258,9 @@ export default function App() {
           {payload.map((p: any, i: number) => (
             <p key={i} style={{ color: p.color }} className="flex justify-between gap-4">
               <span>{p.name}:</span>
-              <span className="font-bold">{p.value}</span>
+              <span className="font-bold">
+                {p.name === 'Pct Acumulado' ? `${p.value}%` : p.value}
+              </span>
             </p>
           ))}
         </div>
@@ -394,21 +408,26 @@ export default function App() {
                   </ResponsiveContainer>
                 </ChartCard>
 
-                {/* Top Clientes */}
-                <ChartCard title="Top 10 Clientes (por volume de kits)">
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={topClientesData} layout="vertical" margin={{ left: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={120} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="value" name="Kits" radius={[0, 6, 6, 0]}>
-                        {topClientesData.map((_, i) => (
-                          <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                {/* Pareto Etapas Atrasadas */}
+                <ChartCard title="Pareto de Etapas mais Atrasadas">
+                  {paretoEtapasData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <ComposedChart data={paretoEtapasData} margin={{ left: -10, right: -10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} angle={-30} textAnchor="end" height={60} />
+                        <YAxis yAxisId="left" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Qtd Itens', angle: -90, position: 'insideLeft', fill: '#94a3b8', style: { textAnchor: 'middle' }, offset: 0 }} />
+                        <YAxis yAxisId="right" orientation="right" stroke="#ef4444" domain={[0, 100]} unit="%" tick={{ fill: '#ef4444', fontSize: 10 }} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
+                        <Bar yAxisId="left" dataKey="Quantidade" fill="#6366f1" name="Qtd Atrasos" radius={[4, 4, 0, 0]} barSize={20} />
+                        <Line yAxisId="right" type="monotone" dataKey="Pct Acumulado" name="% Acumulado" stroke="#ef4444" strokeWidth={2} dot={{ fill: '#ef4444', r: 4 }} activeDot={{ r: 6 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-[250px] items-center justify-center text-xs text-slate-500">
+                      Nenhum item atrasado com os filtros aplicados.
+                    </div>
+                  )}
                 </ChartCard>
               </div>
 
