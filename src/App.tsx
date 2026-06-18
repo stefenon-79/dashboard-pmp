@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import {
-  BarChart, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Cell, LabelList
 } from 'recharts'
 import {
@@ -390,9 +390,9 @@ export default function App() {
               </div>
 
               {/* Charts row */}
-              <div className="grid gap-6 lg:grid-cols-2">
+              <div className="grid gap-6 lg:grid-cols-3">
                 {/* Status chart */}
-                <ChartCard title="Distribuição por Status">
+                <ChartCard title="Distribuição por Status" className="lg:col-span-1">
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart data={statusChartData} layout="vertical" margin={{ left: 10, right: 30 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -410,23 +410,18 @@ export default function App() {
                 </ChartCard>
 
                 {/* Pareto Etapas Atrasadas */}
-                <ChartCard title="Pareto de Etapas mais Atrasadas">
+                <ChartCard title="Pareto de Etapas mais Atrasadas" className="lg:col-span-2">
                   {paretoEtapasData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={250}>
-                      <ComposedChart data={paretoEtapasData} margin={{ left: -10, right: 10, top: 15 }}>
+                      <BarChart data={paretoEtapasData} margin={{ left: -10, right: 10, top: 15 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                        <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} angle={-30} textAnchor="end" height={60} />
-                        <YAxis yAxisId="left" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Qtd Itens', angle: -90, position: 'insideLeft', fill: '#94a3b8', style: { textAnchor: 'middle' }, offset: 0 }} />
-                        <YAxis yAxisId="right" orientation="right" stroke="#3b82f6" domain={[0, 100]} unit="%" tick={{ fill: '#3b82f6', fontSize: 10 }} />
+                        <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} angle={-30} textAnchor="end" height={60} interval={0} />
+                        <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Qtd Itens', angle: -90, position: 'insideLeft', fill: '#94a3b8', style: { textAnchor: 'middle' }, offset: 0 }} />
                         <Tooltip content={<CustomTooltip />} />
-                        <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
-                        <Bar yAxisId="left" dataKey="Quantidade" fill="#ef4444" name="Qtd Atrasos" radius={[4, 4, 0, 0]} barSize={20}>
+                        <Bar dataKey="Quantidade" fill="#ef4444" name="Qtd Atrasos" radius={[4, 4, 0, 0]} barSize={24}>
                           <LabelList dataKey="Quantidade" position="top" fill="#cbd5e1" fontSize={9} style={{ fontWeight: 'bold' }} />
                         </Bar>
-                        <Line yAxisId="right" type="monotone" dataKey="Pct Acumulado" name="% Acumulado" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }}>
-                          <LabelList dataKey="Pct Acumulado" position="top" fill="#3b82f6" fontSize={8} formatter={(val: any) => `${val}%`} />
-                        </Line>
-                      </ComposedChart>
+                      </BarChart>
                     </ResponsiveContainer>
                   ) : (
                     <div className="flex h-[250px] items-center justify-center text-xs text-slate-500">
@@ -623,9 +618,9 @@ function KpiCard({ label, value, icon, color, sub }: { label: string; value: str
   )
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
+    <div className={`bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 ${className}`}>
       <h3 className="text-sm font-bold text-white mb-4">{title}</h3>
       {children}
     </div>
