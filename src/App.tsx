@@ -6,7 +6,8 @@ import {
 import {
   LayoutDashboard, FolderKanban,
   Search, Layers, Sparkles, Filter, Clock,
-  AlertTriangle, CheckCircle2, Loader2, RefreshCw, Timer
+  AlertTriangle, CheckCircle2, Loader2, RefreshCw, Timer,
+  Calendar, ChevronDown, ChevronRight
 } from 'lucide-react'
 import rawData from './data/pmp-data.json'
 
@@ -81,9 +82,8 @@ function normalizeEtapa(etapa: string): string {
   return etapa.trim() || 'Outros'
 }
 
-// --- Main App ---
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'leadtime'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'leadtime' | 'gantt'>('overview')
   const [searchQuery, setSearchQuery] = useState('')
 
   // Status to handle sheet update process
@@ -123,6 +123,19 @@ export default function App() {
     setSelectedLtEquipment(null) // Reset equipment selection when client changes
   }
 
+  // Gantt states
+  const [ganttClienteFilter, setGanttClienteFilter] = useState<string>('')
+  const [expandedEquipments, setExpandedEquipments] = useState<Record<string, boolean>>({})
+
+
+
+  const toggleExpand = (key: string) => {
+    setExpandedEquipments(prev => ({
+      ...prev,
+      [key]: prev[key] === false ? true : false
+    }))
+  }
+
   // Local dynamic table states
   const [tblProj, setTblProj] = useState('todos')
   const [tblCli, setTblCli] = useState('todos')
@@ -148,6 +161,13 @@ export default function App() {
     const set = new Set(data.map(d => d.cliente).filter(Boolean))
     return Array.from(set).sort()
   }, [])
+
+  // Set default client for Gantt once uniqueClientes is calculated
+  useEffect(() => {
+    if (uniqueClientes.length > 0 && !ganttClienteFilter) {
+      setGanttClienteFilter(uniqueClientes[0])
+    }
+  }, [uniqueClientes, ganttClienteFilter])
 
   const uniqueEtapas = useMemo(() => {
     const set = new Set(data.map(d => normalizeEtapa(d.etapa)).filter(e => e !== 'Outros'))
@@ -537,6 +557,147 @@ export default function App() {
     return results.sort((a, b) => a.minProg - b.minProg)
   }, [completedEquipments, selectedLtEquipment])
 
+  // --- Gantt Data Processing ---
+  const ganttData = useMemo(() => {
+    if (!ganttClienteFilter) return { weekList: [], equipments: [] }
+
+    const clientRecords = data.filter(d => d.cliente === ganttClienteFilter)
+    if (clientRecords.length === 0) return { weekList: [], equipments: [] }
+
+    // 1. Gather all absolute weeks to define axis limits
+    const allAbsWeeks: number[] = []
+    clientRecords.forEach(r => {
+      const anoAtual = parseInt(r.anoAtual) || 0
+      const anoReal = parseInt(r.anoReal) || 0
+      const prog = parseInt(r.programado) || 0
+      const real = parseInt(r.realizadoSemana) || 0
+
+      if (prog > 0 && anoAtual > 0) allAbsWeeks.push(anoAtual * 52 + prog)
+      if (real > 0 && anoReal > 0) allAbsWeeks.push(anoReal * 52 + real)
+    })
+
+    if (allAbsWeeks.length === 0) return { weekList: [], equipments: [] }
+
+    const minWeek = Math.min(...allAbsWeeks)
+    const maxWeek = Math.max(...allAbsWeeks)
+    
+    // Safety cap to prevent browser hanging on bad data (max 156 weeks = 3 years)
+    const range = Math.min(156, maxWeek - minWeek + 1)
+    const weekList: { abs: number; number: number; year: number }[] = []
+    
+    for (let i = 0; i < range; i++) {
+      const abs = minWeek + i
+      const year = Math.floor(abs / 52)
+      let num = abs % 52
+      if (num === 0) num = 52
+      weekList.push({ abs, number: num, year })
+    }
+
+    // 2. Group by equipment: projeto|||equipamento
+    const equipGroups: Record<string, { client: string; projeto: string; name: string; records: PmpRecord[] }> = {}
+    clientRecords.forEach(r => {
+      const key = `${r.projeto}|||${r.equipamento}`
+      if (!equipGroups[key]) {
+        equipGroups[key] = {
+          client: r.cliente,
+          projeto: r.projeto,
+          name: r.equipamento || 'Sem Nome',
+          records: []
+        }
+      }
+      equipGroups[key].records.push(r)
+    })
+
+    const equipments = Object.entries(equipGroups).map(([key, info]) => {
+      const totalRecords = info.records.length
+      const completedRecords = info.records.filter(r => r.statusGeral === 'Concluído').length
+      const completionPct = totalRecords > 0 ? Math.round((completedRecords / totalRecords) * 100) : 0
+      
+      const hasDelayed = info.records.some(r => r.statusGeral === 'Atrasado')
+      const hasInProduction = info.records.some(r => r.statusGeral === 'Em Produção')
+      
+      let overallStatus = 'Em Produção'
+      if (completionPct === 100) overallStatus = 'Concluído'
+      else if (hasDelayed) overallStatus = 'Atrasado'
+      else if (hasInProduction) overallStatus = 'Em Produção'
+
+      // Group records of this equipment by normalized stage
+      const stageGroups: Record<string, PmpRecord[]> = {}
+      info.records.forEach(r => {
+        const s = normalizeEtapa(r.etapa)
+        if (!stageGroups[s]) {
+          stageGroups[s] = []
+        }
+        stageGroups[s].push(r)
+      })
+
+      const stages = Object.entries(stageGroups).map(([stageName, records]) => {
+        const progWeeks: number[] = []
+        const realWeeks: number[] = []
+
+        records.forEach(r => {
+          const anoAtual = parseInt(r.anoAtual) || 0
+          const anoReal = parseInt(r.anoReal) || 0
+          const prog = parseInt(r.programado) || 0
+          const real = parseInt(r.realizadoSemana) || 0
+
+          if (prog > 0 && anoAtual > 0) progWeeks.push(anoAtual * 52 + prog)
+          if (real > 0 && anoReal > 0) realWeeks.push(anoReal * 52 + real)
+        })
+
+        const minProg = progWeeks.length > 0 ? Math.min(...progWeeks) : null
+        const maxProg = progWeeks.length > 0 ? Math.max(...progWeeks) : null
+        const minReal = realWeeks.length > 0 ? Math.min(...realWeeks) : null
+        const maxReal = realWeeks.length > 0 ? Math.max(...realWeeks) : null
+
+        const stageTotal = records.length
+        const stageCompleted = records.filter(r => r.statusGeral === 'Concluído').length
+        const stagePct = stageTotal > 0 ? Math.round((stageCompleted / stageTotal) * 100) : 0
+        const stageHasDelayed = records.some(r => r.statusGeral === 'Atrasado')
+
+        let stageStatus = 'Em Produção'
+        if (stagePct === 100) stageStatus = 'Concluído'
+        else if (stageHasDelayed) stageStatus = 'Atrasado'
+
+        return {
+          name: stageName,
+          minProg,
+          maxProg,
+          minReal,
+          maxReal,
+          status: stageStatus,
+          recordsCount: stageTotal
+        }
+      })
+
+      // Sort stages chronologically by programmed start week
+      stages.sort((a, b) => {
+        const startA = a.minProg !== null ? a.minProg : Infinity
+        const startB = b.minProg !== null ? b.minProg : Infinity
+        return startA - startB
+      })
+
+      return {
+        key,
+        projeto: info.projeto,
+        name: info.name,
+        completionPct,
+        status: overallStatus,
+        stages
+      }
+    })
+
+    // Sort equipments by project ID, then name
+    equipments.sort((a, b) => a.projeto.localeCompare(b.projeto) || a.name.localeCompare(b.name))
+
+    return {
+      weekList,
+      equipments,
+      minWeek,
+      maxWeek
+    }
+  }, [ganttClienteFilter])
+
   // Custom Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -561,6 +722,7 @@ export default function App() {
   const tabs = [
     { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'leadtime', label: 'Lead Time', icon: Timer },
+    { id: 'gantt', label: 'Cronograma', icon: Calendar },
   ]
 
   return (
@@ -1218,6 +1380,222 @@ export default function App() {
                   <div className="flex flex-col items-center justify-center text-center p-8 border border-dashed border-slate-800 rounded-xl bg-slate-900/10 mt-4">
                     <Clock className="h-8 w-8 text-slate-700 mb-2 animate-pulse" />
                     <p className="text-xs text-slate-500">Nenhum equipamento selecionado. Clique em uma barra de equipamento acima para carregar suas etapas produtivas.</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ================== GANTT TIMELINE TAB ================== */}
+          {activeTab === 'gantt' && (
+            <>
+              {/* Title & Description */}
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-indigo-400" /> Cronograma Semanal de Produção (Gantt)
+                </h2>
+                <p className="text-slate-400 text-sm mt-0.5">
+                  Visualize a programação e realização semanal das etapas produtivas por equipamento.
+                </p>
+              </div>
+
+              {/* Client Filter */}
+              <div className="flex flex-wrap gap-3 items-center bg-[#12141c] border border-slate-800/80 rounded-2xl p-4">
+                <div className="flex items-center gap-2 text-xs text-slate-400 font-bold">
+                  <Filter className="h-4 w-4" /> Selecionar Cliente:
+                </div>
+                <select
+                  value={ganttClienteFilter}
+                  onChange={e => setGanttClienteFilter(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer"
+                >
+                  {uniqueClientes.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                
+                {/* Gantt Legend */}
+                <div className="ml-auto flex flex-wrap gap-4 items-center text-xs">
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <div className="h-3 w-6 bg-[#6366f1]/60 border border-[#6366f1]/30 rounded"></div>
+                    <span>Semana Programada</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <div className="h-3 w-6 bg-emerald-500/70 border border-emerald-400/30 rounded"></div>
+                    <span>Realizado (Concluído)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <div className="h-3 w-6 bg-blue-500/70 border border-blue-400/30 rounded"></div>
+                    <span>Em Produção</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <div className="h-3 w-6 bg-red-500/70 border border-red-400/30 rounded"></div>
+                    <span>Atrasado</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gantt Chart Panel */}
+              <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl overflow-hidden flex flex-col">
+                {ganttData.weekList.length > 0 ? (
+                  <div className="overflow-x-auto select-none">
+                    <div className="min-w-max flex flex-col">
+                      
+                      {/* Timeline Header Row */}
+                      <div className="flex border-b border-slate-800 bg-[#0d0e12]">
+                        {/* Sticky Header Left Corner */}
+                        <div className="w-[320px] shrink-0 sticky left-0 bg-[#0d0e12] z-20 border-r border-slate-800 p-4 flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+                          <span>Equipamento / Etapa</span>
+                          <span>Status</span>
+                        </div>
+                        
+                        {/* Week Headers */}
+                        <div className="flex">
+                          {ganttData.weekList.map((w, idx) => (
+                            <div
+                              key={idx}
+                              className="w-[60px] shrink-0 border-r border-slate-800/60 p-2.5 text-center flex flex-col items-center justify-center"
+                            >
+                              <span className="text-[11px] font-extrabold text-slate-300">S{w.number}</span>
+                              <span className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">'{String(w.year).substring(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Timeline Body */}
+                      <div className="flex flex-col">
+                        {ganttData.equipments.map((eq) => {
+                          const isExpanded = expandedEquipments[eq.key] !== false
+                          const statusColor = 
+                            eq.status === 'Concluído' ? 'text-emerald-400' :
+                            eq.status === 'Atrasado' ? 'text-red-400' : 'text-blue-400'
+                          
+                          return (
+                            <div key={eq.key} className="flex flex-col">
+                              
+                              {/* Equipment Row */}
+                              <div className="flex border-b border-slate-800 bg-[#161922]/80 hover:bg-[#1a1e2a] transition-colors">
+                                {/* Sticky Equipment Label */}
+                                <div
+                                  onClick={() => toggleExpand(eq.key)}
+                                  className="w-[320px] shrink-0 sticky left-0 bg-[#161922] z-10 border-r border-slate-800 p-3.5 flex items-center gap-2 cursor-pointer select-none text-left"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider bg-indigo-500/10 px-1.5 py-0.5 rounded">
+                                        Proj {eq.projeto}
+                                      </span>
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 ${statusColor}`}>
+                                        {eq.completionPct}%
+                                      </span>
+                                    </div>
+                                    <div className="text-xs font-bold text-slate-100 truncate mt-1" title={eq.name}>
+                                      {eq.name}
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                {/* Background Cells for Equipment Row */}
+                                <div className="flex bg-[#161922]/30">
+                                  {ganttData.weekList.map((_, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="w-[60px] shrink-0 border-r border-slate-800/30 h-14"
+                                    ></div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Stages Rows (conditional) */}
+                              {isExpanded && eq.stages.map((stage) => {
+                                const isStageCompleted = stage.status === 'Concluído'
+                                const isStageDelayed = stage.status === 'Atrasado'
+                                
+                                const stageIcon = 
+                                  isStageCompleted ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" /> :
+                                  isStageDelayed ? <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0" /> :
+                                  <Loader2 className="h-3.5 w-3.5 text-blue-400 shrink-0 animate-spin" />
+
+                                const stageBadgeColor = 
+                                  isStageCompleted ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                  isStageDelayed ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                  'bg-blue-500/10 text-blue-400 border-blue-500/20'
+
+                                return (
+                                  <div key={stage.name} className="flex border-b border-slate-800/40 hover:bg-slate-800/10 transition-colors">
+                                    
+                                    {/* Sticky Left Stage Cell */}
+                                    <div className="w-[320px] shrink-0 sticky left-0 bg-[#12141c] z-10 border-r border-slate-800 p-3 pl-8 flex items-center justify-between">
+                                      <span className="text-[11px] font-medium text-slate-300 truncate pr-2" title={stage.name}>
+                                        {stage.name}
+                                      </span>
+                                      <div className={`flex items-center gap-1 text-[9px] font-semibold border rounded-lg px-1.5 py-0.5 ${stageBadgeColor}`}>
+                                        {stageIcon}
+                                        <span>{stage.status}</span>
+                                      </div>
+                                    </div>
+
+                                    {/* Timeline Grid Cell Container */}
+                                    <div className="flex relative h-14">
+                                      
+                                      {/* Background Grid Cells */}
+                                      {ganttData.weekList.map((_, idx) => (
+                                        <div
+                                          key={idx}
+                                          className="w-[60px] shrink-0 border-r border-slate-800/20 h-full"
+                                        ></div>
+                                      ))}
+
+                                      {/* Programmed Bar */}
+                                      {stage.minProg !== null && stage.maxProg !== null && (
+                                        <div
+                                          className="absolute top-[10px] h-[10px] bg-[#6366f1]/60 border border-[#6366f1]/30 rounded-full cursor-pointer hover:bg-[#6366f1]/85 transition-colors"
+                                          style={{
+                                            left: `${(stage.minProg - (ganttData.minWeek || 0)) * 60 + 4}px`,
+                                            width: `${(stage.maxProg - stage.minProg + 1) * 60 - 8}px`
+                                          }}
+                                          title={`Programado: Semana ${stage.minProg % 52 === 0 ? 52 : stage.minProg % 52} até ${stage.maxProg % 52 === 0 ? 52 : stage.maxProg % 52}`}
+                                        ></div>
+                                      )}
+
+                                      {/* Realized Bar */}
+                                      {stage.minReal !== null && stage.maxReal !== null && (
+                                        <div
+                                          className={`absolute top-[28px] h-[10px] rounded-full cursor-pointer transition-colors border ${
+                                            isStageCompleted ? 'bg-emerald-500/70 border-emerald-400/30 hover:bg-emerald-500/90' :
+                                            isStageDelayed ? 'bg-red-500/70 border-red-400/30 hover:bg-red-500/90' :
+                                            'bg-blue-500/70 border-blue-400/30 hover:bg-blue-500/90'
+                                          }`}
+                                          style={{
+                                            left: `${(stage.minReal - (ganttData.minWeek || 0)) * 60 + 4}px`,
+                                            width: `${(stage.maxReal - stage.minReal + 1) * 60 - 8}px`
+                                          }}
+                                          title={`Realizado: Semana ${stage.minReal % 52 === 0 ? 52 : stage.minReal % 52} até ${stage.maxReal % 52 === 0 ? 52 : stage.maxReal % 52}`}
+                                        ></div>
+                                      )}
+
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-center p-16 text-slate-500">
+                    <Calendar className="h-12 w-12 text-slate-700 mb-3 animate-pulse" />
+                    <p className="text-sm font-bold text-slate-400">Sem cronograma disponível</p>
+                    <p className="text-xs text-slate-600 mt-1 max-w-sm">Este cliente não possui dados temporais cadastrados ou o cliente selecionado é inválido.</p>
                   </div>
                 )}
               </div>
