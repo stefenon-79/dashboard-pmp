@@ -937,7 +937,7 @@ function KpiCard({ label, value, icon, color, sub }: { label: string; value: str
       <div className="mt-4">
         <span className="text-4xl font-black text-white tracking-tight">{value}</span>
       </div>
-      <p className="text-xs font-semibold text-slate-400 mt-1.5">{sub}</p>
+      <p className="text-sm font-bold text-slate-300 mt-1.5">{sub}</p>
     </div>
   )
 }
