@@ -85,6 +85,30 @@ function normalizeEtapa(etapa: string): string {
 export default function App() {
   const [activeTab, setActiveTab] = useState<'overview' | 'leadtime'>('overview')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Status to handle sheet update process
+  const [updateStatus, setUpdateStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' })
+
+  const handleUpdateData = async () => {
+    setUpdateStatus({ type: 'loading', message: 'Lendo planilha Excel... (pode levar até 1 minuto)' })
+    try {
+      const res = await fetch('/api/update')
+      const result = await res.json()
+      if (result.success) {
+        setUpdateStatus({ type: 'success', message: 'Dados atualizados com sucesso! Atualizando tela...' })
+        setTimeout(() => {
+          window.location.reload()
+        }, 1500)
+      } else {
+        setUpdateStatus({ type: 'error', message: `Erro: ${result.error || 'Falha desconhecida'}` })
+      }
+    } catch (err: any) {
+      setUpdateStatus({
+        type: 'error',
+        message: `Falha na rede. O botão de atualizar só funciona rodando localmente.`
+      })
+    }
+  }
   const [statusFilter, setStatusFilter] = useState('todos')
   const [clienteFilter, setClienteFilter] = useState('todos')
   const [etapaFilter, setEtapaFilter] = useState('todos')
@@ -417,8 +441,21 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button className="inline-flex items-center gap-2 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 text-xs font-medium px-3 py-2 rounded-xl transition-colors">
-              <RefreshCw className="h-3.5 w-3.5" /> Atualizar Dados
+            {updateStatus.type !== 'idle' && (
+              <span className={`text-xs px-3 py-1.5 rounded-xl font-medium transition-all ${
+                updateStatus.type === 'loading' ? 'bg-slate-800/80 text-slate-300 animate-pulse' :
+                updateStatus.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+              }`}>
+                {updateStatus.message}
+              </span>
+            )}
+            <button
+              onClick={handleUpdateData}
+              disabled={updateStatus.type === 'loading'}
+              className="inline-flex items-center gap-2 bg-indigo-600/90 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-all shadow-md shadow-indigo-600/10 cursor-pointer disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${updateStatus.type === 'loading' ? 'animate-spin' : ''}`} />
+              {updateStatus.type === 'loading' ? 'Atualizando...' : 'Atualizar Dados'}
             </button>
           </div>
         </header>
