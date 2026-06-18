@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, Cell, LabelList, PieChart, Pie
+  ResponsiveContainer, Cell, LabelList, PieChart, Pie,
+  LineChart, Line, ReferenceLine
 } from 'recharts'
 import {
   LayoutDashboard, FolderKanban,
@@ -83,7 +84,7 @@ function normalizeEtapa(etapa: string): string {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'leadtime' | 'gantt'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'leadtime' | 'gantt' | 'compliance'>('overview')
   const [searchQuery, setSearchQuery] = useState('')
 
   // Status to handle sheet update process
@@ -170,6 +171,14 @@ export default function App() {
       [key]: prev[key] === false ? true : false
     }))
   }
+
+  // Compliance (Atendimento ao Plano) states
+  const [complianceStartWeek, setComplianceStartWeek] = useState<number | null>(null)
+  const [complianceEndWeek, setComplianceEndWeek] = useState<number | null>(null)
+  const [complianceMeta, setComplianceMeta] = useState<number>(85)
+  const [complianceSelectedEtapas, setComplianceSelectedEtapas] = useState<string[]>([])
+  const [complianceClienteFilter, setComplianceClienteFilter] = useState<string>('todos')
+  const [etapaDropdownOpen, setEtapaDropdownOpen] = useState(false)
 
   // Local dynamic table states
   const [tblProj, setTblProj] = useState('todos')
@@ -752,6 +761,154 @@ export default function App() {
     }
   }, [ganttClienteFilter, ganttStartWeek, ganttEndWeek, ganttStatusFilter])
 
+  // Global week range calculation for selectors
+  const globalWeekRange = useMemo(() => {
+    const allAbsWeeks: number[] = []
+    data.forEach(r => {
+      const anoAtual = parseInt(r.anoAtual) || 0
+      const anoReal = parseInt(r.anoReal) || 0
+      const prog = parseInt(r.programado) || 0
+      const real = parseInt(r.realizadoSemana) || 0
+
+      if (prog > 0 && anoAtual > 0) allAbsWeeks.push(anoAtual * 52 + prog)
+      if (real > 0 && anoReal > 0) allAbsWeeks.push(anoReal * 52 + real)
+    })
+    
+    if (allAbsWeeks.length === 0) return { weekList: [], minWeek: 0, maxWeek: 0 }
+    
+    const minWeek = Math.min(...allAbsWeeks)
+    const maxWeek = Math.max(...allAbsWeeks)
+    const range = Math.min(156, maxWeek - minWeek + 1)
+    const weekList: { abs: number; number: number; year: number }[] = []
+    for (let i = 0; i < range; i++) {
+      const abs = minWeek + i
+      const year = Math.floor(abs / 52)
+      let num = abs % 52
+      if (num === 0) num = 52
+      weekList.push({ abs, number: num, year })
+    }
+    return { weekList, minWeek, maxWeek }
+  }, [])
+
+  // Initialize compliance filters on mount or when stages load
+  useEffect(() => {
+    if (globalWeekRange.weekList.length > 0) {
+      if (complianceStartWeek === null) setComplianceStartWeek(globalWeekRange.minWeek)
+      if (complianceEndWeek === null) setComplianceEndWeek(globalWeekRange.maxWeek)
+    }
+  }, [globalWeekRange, complianceStartWeek, complianceEndWeek])
+
+  useEffect(() => {
+    if (uniqueEtapas.length > 0 && complianceSelectedEtapas.length === 0) {
+      setComplianceSelectedEtapas(uniqueEtapas)
+    }
+  }, [uniqueEtapas])
+
+  // --- Compliance (Atendimento ao Plano) Calculations ---
+  const complianceChartData = useMemo(() => {
+    const startWeek = complianceStartWeek !== null ? complianceStartWeek : globalWeekRange.minWeek
+    const endWeek = complianceEndWeek !== null ? complianceEndWeek : globalWeekRange.maxWeek
+    
+    if (startWeek === 0 || endWeek === 0 || complianceSelectedEtapas.length === 0) return []
+
+    // 1. Generate range of visible weeks
+    const visibleWeeks: number[] = []
+    const range = Math.max(1, endWeek - startWeek + 1)
+    for (let i = 0; i < range; i++) {
+      visibleWeeks.push(startWeek + i)
+    }
+
+    // 2. Filter records based on selected client and stages
+    const filteredRecords = data.filter(r => {
+      const matchClient = complianceClienteFilter === 'todos' || r.cliente === complianceClienteFilter
+      const matchStage = complianceSelectedEtapas.includes(normalizeEtapa(r.etapa))
+      return matchClient && matchStage
+    })
+
+    // 3. For each week, calculate compliance percentage
+    return visibleWeeks.map(absWeek => {
+      const year = Math.floor(absWeek / 52)
+      let weekNumber = absWeek % 52
+      if (weekNumber === 0) weekNumber = 52
+
+      // Find records programmed for this specific absolute week
+      const progRecords = filteredRecords.filter(r => {
+        const anoAtual = parseInt(r.anoAtual) || 0
+        const prog = parseInt(r.programado) || 0
+        return (anoAtual * 52 + prog) === absWeek
+      })
+
+      const total = progRecords.length
+      const completed = progRecords.filter(r => r.statusGeral === 'Concluído').length
+
+      return {
+        absWeek,
+        semanaLabel: `S${weekNumber} ('${String(year).substring(2)})`,
+        semanaShort: `S${weekNumber}`,
+        'Atendimento': total > 0 ? parseFloat(((completed / total) * 100).toFixed(1)) : null,
+        totalProgramados: total,
+        totalConcluidos: completed
+      }
+    })
+  }, [complianceStartWeek, complianceEndWeek, complianceSelectedEtapas, complianceClienteFilter, globalWeekRange])
+
+  const complianceGradientOffset = useMemo(() => {
+    const values = complianceChartData
+      .map(d => d.Atendimento)
+      .filter((v): v is number => v !== null)
+    if (values.length === 0) return 0
+    const maxVal = Math.max(...values)
+    const minVal = Math.min(...values)
+    if (maxVal === minVal) {
+      return maxVal >= complianceMeta ? 100 : 0
+    }
+    const offset = (maxVal - complianceMeta) / (maxVal - minVal)
+    return Math.max(0, Math.min(100, offset * 100))
+  }, [complianceChartData, complianceMeta])
+
+  // Compliance Custom Helpers
+  const CustomDot = (props: any) => {
+    const { cx, cy, value } = props
+    if (value === null || value === undefined) return null
+    const color = value >= complianceMeta ? '#10b981' : '#ef4444'
+    return (
+      <circle cx={cx} cy={cy} r={4} fill={color} stroke="#0d0e12" strokeWidth={1.5} />
+    )
+  }
+
+  const ComplianceTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const d = payload[0].payload
+      const val = d.Atendimento
+      const statusColor = val >= complianceMeta ? 'text-emerald-400' : 'text-red-400'
+      
+      return (
+        <div className="bg-[#1a1c28] border border-slate-700 rounded-xl p-3 shadow-xl text-xs">
+          <p className="font-bold text-white mb-1">{d.semanaLabel}</p>
+          {val !== null ? (
+            <div className="space-y-1 mt-1.5">
+              <p className="flex justify-between gap-4">
+                <span>Atendimento:</span>
+                <span className={`font-bold ${statusColor}`}>{val}%</span>
+              </p>
+              <p className="flex justify-between gap-4 text-slate-400">
+                <span>Programados:</span>
+                <span className="font-semibold text-slate-200">{d.totalProgramados}</span>
+              </p>
+              <p className="flex justify-between gap-4 text-slate-400">
+                <span>Concluídos:</span>
+                <span className="font-semibold text-emerald-400">{d.totalConcluidos}</span>
+              </p>
+            </div>
+          ) : (
+            <p className="text-slate-500 italic mt-1">Nenhuma etapa programada para esta semana</p>
+          )}
+        </div>
+      )
+    }
+    return null
+  }
+
   // Custom Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -777,6 +934,7 @@ export default function App() {
     { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
     { id: 'leadtime', label: 'Lead Time', icon: Timer },
     { id: 'gantt', label: 'Cronograma', icon: Calendar },
+    { id: 'compliance', label: 'Atendimento ao Plano', icon: CheckCircle2 },
   ]
 
   return (
@@ -1698,6 +1856,232 @@ export default function App() {
                     <Calendar className="h-12 w-12 text-slate-700 mb-3 animate-pulse" />
                     <p className="text-sm font-bold text-slate-400">Sem cronograma disponível</p>
                     <p className="text-xs text-slate-600 mt-1 max-w-sm">Este cliente não possui dados temporais cadastrados ou o cliente selecionado é inválido.</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ================== COMPLIANCE (ATENDIMENTO AO PLANO) TAB ================== */}
+          {activeTab === 'compliance' && (
+            <>
+              {/* Title & Description */}
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400" /> Atendimento ao Plano (Aderência de Cronograma)
+                </h2>
+                <p className="text-slate-400 text-sm mt-0.5">
+                  Analise o percentual de kits concluídos em relação aos que foram programados para cada semana.
+                </p>
+              </div>
+
+              {/* Filters Panel */}
+              <div className="grid gap-4 md:grid-cols-12 items-center bg-[#12141c] border border-slate-800/80 rounded-2xl p-5 relative">
+                
+                {/* Client filter */}
+                <div className="md:col-span-3 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Cliente</label>
+                  <select
+                    value={complianceClienteFilter}
+                    onChange={e => setComplianceClienteFilter(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    <option value="todos">Todos os Clientes</option>
+                    {uniqueClientes.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Custom Multi-Select Dropdown for Stages */}
+                <div className="relative md:col-span-3 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Etapas Produtivas</label>
+                  <button
+                    onClick={() => setEtapaDropdownOpen(!etapaDropdownOpen)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full text-left flex items-center justify-between"
+                  >
+                    <span className="truncate">
+                      {complianceSelectedEtapas.length === uniqueEtapas.length
+                        ? 'Todas as etapas selecionadas'
+                        : complianceSelectedEtapas.length === 0
+                        ? 'Nenhuma etapa selecionada'
+                        : `${complianceSelectedEtapas.length} de ${uniqueEtapas.length} selecionadas`
+                      }
+                    </span>
+                    <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+                  </button>
+                  
+                  {etapaDropdownOpen && (
+                    <>
+                      {/* Dropdown Overlay to close it when clicking outside */}
+                      <div className="fixed inset-0 z-30" onClick={() => setEtapaDropdownOpen(false)}></div>
+                      
+                      {/* Dropdown Box */}
+                      <div className="absolute top-[55px] left-0 w-full bg-[#1a1d28] border border-slate-700/80 rounded-xl shadow-2xl p-3 z-40 max-h-[260px] overflow-y-auto flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-[10px] font-bold text-slate-400">
+                          <button
+                            onClick={() => setComplianceSelectedEtapas(uniqueEtapas)}
+                            className="text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                          >
+                            Selecionar Todas
+                          </button>
+                          <button
+                            onClick={() => setComplianceSelectedEtapas([])}
+                            className="text-red-400 hover:text-red-300 cursor-pointer"
+                          >
+                            Limpar Seleção
+                          </button>
+                        </div>
+                        
+                        <div className="flex flex-col gap-2">
+                          {uniqueEtapas.map(etapa => {
+                            const isChecked = complianceSelectedEtapas.includes(etapa)
+                            return (
+                              <label key={etapa} className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer hover:text-white select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    if (isChecked) {
+                                      setComplianceSelectedEtapas(complianceSelectedEtapas.filter(e => e !== etapa))
+                                    } else {
+                                      setComplianceSelectedEtapas([...complianceSelectedEtapas, etapa])
+                                    }
+                                  }}
+                                  className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-800 h-3.5 w-3.5"
+                                />
+                                <span>{etapa}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Start Week dropdown */}
+                <div className="md:col-span-2 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Semana Início</label>
+                  <select
+                    value={complianceStartWeek !== null ? complianceStartWeek : ''}
+                    onChange={e => setComplianceStartWeek(e.target.value ? parseInt(e.target.value) : null)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    {globalWeekRange.weekList.map(w => (
+                      <option key={w.abs} value={w.abs}>S{w.number} ({w.year})</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* End Week dropdown */}
+                <div className="md:col-span-2 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Semana Fim</label>
+                  <select
+                    value={complianceEndWeek !== null ? complianceEndWeek : ''}
+                    onChange={e => setComplianceEndWeek(e.target.value ? parseInt(e.target.value) : null)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    {globalWeekRange.weekList
+                      .filter(w => complianceStartWeek === null || w.abs >= complianceStartWeek)
+                      .map(w => (
+                        <option key={w.abs} value={w.abs}>S{w.number} ({w.year})</option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* Meta Selection */}
+                <div className="md:col-span-2 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Meta</label>
+                  <select
+                    value={complianceMeta}
+                    onChange={e => setComplianceMeta(parseInt(e.target.value))}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    {Array.from({ length: 21 }, (_, i) => i * 5).reverse().map(val => (
+                      <option key={val} value={val}>{val}%</option>
+                    ))}
+                  </select>
+                </div>
+
+              </div>
+
+              {/* Line Chart Panel */}
+              <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white">Percentual de Atendimento ao Plano por Semana</h3>
+                  <div className="flex gap-4 items-center text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                      Meta Alcançada (≥ {complianceMeta}%)
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-red-500"></span>
+                      Abaixo da Meta ({"<"} {complianceMeta}%)
+                    </span>
+                  </div>
+                </div>
+
+                {complianceChartData.length > 0 ? (
+                  <div className="h-[380px] w-full mt-4">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={complianceChartData}
+                        margin={{ top: 15, right: 30, left: -15, bottom: 5 }}
+                      >
+                        <defs>
+                          <linearGradient id="complianceGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset={`${complianceGradientOffset}%`} stopColor="#10b981" />
+                            <stop offset={`${complianceGradientOffset}%`} stopColor="#ef4444" />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis
+                          dataKey="semanaShort"
+                          stroke="#94a3b8"
+                          tick={{ fill: '#94a3b8', fontSize: 10 }}
+                        />
+                        <YAxis
+                          stroke="#94a3b8"
+                          tick={{ fill: '#94a3b8', fontSize: 10 }}
+                          domain={[0, 100]}
+                          tickFormatter={(val) => `${val}%`}
+                        />
+                        <Tooltip content={<ComplianceTooltip />} />
+                        
+                        {/* Reference Line for the Meta */}
+                        <ReferenceLine
+                          y={complianceMeta}
+                          stroke="#f59e0b"
+                          strokeWidth={1.5}
+                          strokeDasharray="4 4"
+                          label={{
+                            value: `Meta: ${complianceMeta}%`,
+                            position: 'top',
+                            fill: '#f59e0b',
+                            fontSize: 10,
+                            fontWeight: 'bold'
+                          }}
+                        />
+
+                        {/* Plan Compliance Line */}
+                        <Line
+                          type="monotone"
+                          dataKey="Atendimento"
+                          name="Atendimento ao Plano"
+                          stroke="url(#complianceGradient)"
+                          strokeWidth={3}
+                          connectNulls={true}
+                          dot={<CustomDot />}
+                          activeDot={{ r: 6, strokeWidth: 0 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-center p-16 text-slate-500">
+                    <Clock className="h-10 w-10 text-slate-700 mb-2" />
+                    <p className="text-xs">Nenhum dado programado para o range de semanas ou etapas selecionadas.</p>
                   </div>
                 )}
               </div>
