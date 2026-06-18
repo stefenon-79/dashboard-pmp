@@ -93,13 +93,20 @@ export default function App() {
   const [ltGroupBy, setLtGroupBy] = useState<'cliente' | 'conjGeral' | 'equipamento'>('cliente')
   const [ltClienteFilter, setLtClienteFilter] = useState('todos')
 
-  // Local table states
-  const [atrasadosSearch, setAtrasadosSearch] = useState('')
-  const [atrasadosEtapa, setAtrasadosEtapa] = useState('todos')
+  // Local table states (Atrasados)
+  const [atrasadosProj, setAtrasadosProj] = useState('')
+  const [atrasadosCli, setAtrasadosCli] = useState('')
+  const [atrasadosEquip, setAtrasadosEquip] = useState('')
+  const [atrasadosKit, setAtrasadosKit] = useState('')
+  const [atrasadosEtap, setAtrasadosEtap] = useState('todos')
   const [atrasadosPage, setAtrasadosPage] = useState(1)
 
-  const [producaoSearch, setProducaoSearch] = useState('')
-  const [producaoEtapa, setProducaoEtapa] = useState('todos')
+  // Local table states (Em Produção)
+  const [producaoProj, setProducaoProj] = useState('')
+  const [producaoCli, setProducaoCli] = useState('')
+  const [producaoEquip, setProducaoEquip] = useState('')
+  const [producaoKit, setProducaoKit] = useState('')
+  const [producaoEtap, setProducaoEtap] = useState('todos')
   const [producaoPage, setProducaoPage] = useState(1)
 
   const ITEMS_PER_PAGE = 15
@@ -179,30 +186,28 @@ export default function App() {
     return filtered
       .filter(d => d.statusGeral === 'Atrasado')
       .filter(d => {
-        const matchSearch = atrasadosSearch === '' ||
-          d.projeto.toLowerCase().includes(atrasadosSearch.toLowerCase()) ||
-          d.cliente.toLowerCase().includes(atrasadosSearch.toLowerCase()) ||
-          d.equipamento.toLowerCase().includes(atrasadosSearch.toLowerCase()) ||
-          d.kits.toLowerCase().includes(atrasadosSearch.toLowerCase())
-        const matchEtapa = atrasadosEtapa === 'todos' || normalizeEtapa(d.etapa) === atrasadosEtapa
-        return matchSearch && matchEtapa
+        const matchProj = atrasadosProj === '' || d.projeto.toLowerCase().includes(atrasadosProj.toLowerCase())
+        const matchCli = atrasadosCli === '' || d.cliente.toLowerCase().includes(atrasadosCli.toLowerCase())
+        const matchEquip = atrasadosEquip === '' || d.equipamento.toLowerCase().includes(atrasadosEquip.toLowerCase())
+        const matchKit = atrasadosKit === '' || d.kits.toLowerCase().includes(atrasadosKit.toLowerCase())
+        const matchEtap = atrasadosEtap === 'todos' || normalizeEtapa(d.etapa) === atrasadosEtap
+        return matchProj && matchCli && matchEquip && matchKit && matchEtap
       })
-  }, [filtered, atrasadosSearch, atrasadosEtapa])
+  }, [filtered, atrasadosProj, atrasadosCli, atrasadosEquip, atrasadosKit, atrasadosEtap])
 
   // Em Produção items filtered list
   const filteredProducaoItems = useMemo(() => {
     return filtered
       .filter(d => d.statusGeral === 'Em Produção')
       .filter(d => {
-        const matchSearch = producaoSearch === '' ||
-          d.projeto.toLowerCase().includes(producaoSearch.toLowerCase()) ||
-          d.cliente.toLowerCase().includes(producaoSearch.toLowerCase()) ||
-          d.equipamento.toLowerCase().includes(producaoSearch.toLowerCase()) ||
-          d.kits.toLowerCase().includes(producaoSearch.toLowerCase())
-        const matchEtapa = producaoEtapa === 'todos' || normalizeEtapa(d.etapa) === producaoEtapa
-        return matchSearch && matchEtapa
+        const matchProj = producaoProj === '' || d.projeto.toLowerCase().includes(producaoProj.toLowerCase())
+        const matchCli = producaoCli === '' || d.cliente.toLowerCase().includes(producaoCli.toLowerCase())
+        const matchEquip = producaoEquip === '' || d.equipamento.toLowerCase().includes(producaoEquip.toLowerCase())
+        const matchKit = producaoKit === '' || d.kits.toLowerCase().includes(producaoKit.toLowerCase())
+        const matchEtap = producaoEtap === 'todos' || normalizeEtapa(d.etapa) === producaoEtap
+        return matchProj && matchCli && matchEquip && matchKit && matchEtap
       })
-  }, [filtered, producaoSearch, producaoEtapa])
+  }, [filtered, producaoProj, producaoCli, producaoEquip, producaoKit, producaoEtap])
 
   const totalAtrasadosPages = useMemo(() => {
     return Math.max(1, Math.ceil(filteredDelayedItems.length / ITEMS_PER_PAGE))
@@ -482,43 +487,73 @@ export default function App() {
 
               {/* Delayed items table */}
               <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <AlertTriangle className="h-5 w-5 text-red-400" /> Itens Atrasados ({filteredDelayedItems.length})
                   </h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
-                      <input
-                        type="text"
-                        placeholder="Buscar nesta tabela..."
-                        value={atrasadosSearch}
-                        onChange={e => { setAtrasadosSearch(e.target.value); setAtrasadosPage(1); }}
-                        className="bg-slate-800/40 border border-slate-700/50 rounded-lg py-1 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
-                      />
-                    </div>
-                    <select
-                      value={atrasadosEtapa}
-                      onChange={e => { setAtrasadosEtapa(e.target.value); setAtrasadosPage(1); }}
-                      className="bg-slate-800/40 border border-slate-700/50 rounded-lg py-1 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 transition-colors"
-                    >
-                      <option value="todos">Etapa: Todas</option>
-                      {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
-                    </select>
-                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
-                        <th className="py-3 px-3 text-left font-semibold">Projeto</th>
-                        <th className="py-3 px-3 text-left font-semibold">Cliente</th>
-                        <th className="py-3 px-3 text-left font-semibold">Equipamento</th>
-                        <th className="py-3 px-3 text-left font-semibold">Kit</th>
-                        <th className="py-3 px-3 text-left font-semibold">Etapa</th>
-                        <th className="py-3 px-3 text-center font-semibold">Sem. Prog.</th>
-                        <th className="py-3 px-3 text-center font-semibold">Sem. Real</th>
+                        <th className="py-2.5 px-3 text-left font-semibold w-[120px]">Projeto</th>
+                        <th className="py-2.5 px-3 text-left font-semibold w-[160px]">Cliente</th>
+                        <th className="py-2.5 px-3 text-left font-semibold">Equipamento</th>
+                        <th className="py-2.5 px-3 text-left font-semibold w-[120px]">Kit</th>
+                        <th className="py-2.5 px-3 text-left font-semibold w-[160px]">Etapa</th>
+                        <th className="py-2.5 px-3 text-center font-semibold w-[80px]">Sem. Prog.</th>
+                        <th className="py-2.5 px-3 text-center font-semibold w-[80px]">Sem. Real</th>
+                      </tr>
+                      <tr className="border-b border-slate-800/80 bg-slate-900/40">
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filtrar..."
+                            value={atrasadosProj}
+                            onChange={e => { setAtrasadosProj(e.target.value); setAtrasadosPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          />
+                        </th>
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filtrar..."
+                            value={atrasadosCli}
+                            onChange={e => { setAtrasadosCli(e.target.value); setAtrasadosPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          />
+                        </th>
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filtrar..."
+                            value={atrasadosEquip}
+                            onChange={e => { setAtrasadosEquip(e.target.value); setAtrasadosPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          />
+                        </th>
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filtrar..."
+                            value={atrasadosKit}
+                            onChange={e => { setAtrasadosKit(e.target.value); setAtrasadosPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          />
+                        </th>
+                        <th className="p-1.5">
+                          <select
+                            value={atrasadosEtap}
+                            onChange={e => { setAtrasadosEtap(e.target.value); setAtrasadosPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todas</option>
+                            {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
+                          </select>
+                        </th>
+                        <th className="p-1.5"></th>
+                        <th className="p-1.5"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -570,43 +605,73 @@ export default function App() {
 
               {/* Em Produção items table */}
               <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <Loader2 className="h-5 w-5 text-indigo-400 animate-spin" /> Itens Em Produção ({filteredProducaoItems.length})
                   </h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
-                      <input
-                        type="text"
-                        placeholder="Buscar nesta tabela..."
-                        value={producaoSearch}
-                        onChange={e => { setProducaoSearch(e.target.value); setProducaoPage(1); }}
-                        className="bg-slate-800/40 border border-slate-700/50 rounded-lg py-1 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
-                      />
-                    </div>
-                    <select
-                      value={producaoEtapa}
-                      onChange={e => { setProducaoEtapa(e.target.value); setProducaoPage(1); }}
-                      className="bg-slate-800/40 border border-slate-700/50 rounded-lg py-1 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 transition-colors"
-                    >
-                      <option value="todos">Etapa: Todas</option>
-                      {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
-                    </select>
-                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
-                        <th className="py-3 px-3 text-left font-semibold">Projeto</th>
-                        <th className="py-3 px-3 text-left font-semibold">Cliente</th>
-                        <th className="py-3 px-3 text-left font-semibold">Equipamento</th>
-                        <th className="py-3 px-3 text-left font-semibold">Kit</th>
-                        <th className="py-3 px-3 text-left font-semibold">Etapa</th>
-                        <th className="py-3 px-3 text-center font-semibold">Sem. Prog.</th>
-                        <th className="py-3 px-3 text-center font-semibold">Sem. Real</th>
+                        <th className="py-2.5 px-3 text-left font-semibold w-[120px]">Projeto</th>
+                        <th className="py-2.5 px-3 text-left font-semibold w-[160px]">Cliente</th>
+                        <th className="py-2.5 px-3 text-left font-semibold">Equipamento</th>
+                        <th className="py-2.5 px-3 text-left font-semibold w-[120px]">Kit</th>
+                        <th className="py-2.5 px-3 text-left font-semibold w-[160px]">Etapa</th>
+                        <th className="py-2.5 px-3 text-center font-semibold w-[80px]">Sem. Prog.</th>
+                        <th className="py-2.5 px-3 text-center font-semibold w-[80px]">Sem. Real</th>
+                      </tr>
+                      <tr className="border-b border-slate-800/80 bg-slate-900/40">
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filtrar..."
+                            value={producaoProj}
+                            onChange={e => { setProducaoProj(e.target.value); setProducaoPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          />
+                        </th>
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filtrar..."
+                            value={producaoCli}
+                            onChange={e => { setProducaoCli(e.target.value); setProducaoPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          />
+                        </th>
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filtrar..."
+                            value={producaoEquip}
+                            onChange={e => { setProducaoEquip(e.target.value); setProducaoPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          />
+                        </th>
+                        <th className="p-1.5">
+                          <input
+                            type="text"
+                            placeholder="Filtrar..."
+                            value={producaoKit}
+                            onChange={e => { setProducaoKit(e.target.value); setProducaoPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          />
+                        </th>
+                        <th className="p-1.5">
+                          <select
+                            value={producaoEtap}
+                            onChange={e => { setProducaoEtap(e.target.value); setProducaoPage(1); }}
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todas</option>
+                            {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
+                          </select>
+                        </th>
+                        <th className="p-1.5"></th>
+                        <th className="p-1.5"></th>
                       </tr>
                     </thead>
                     <tbody>
