@@ -209,6 +209,8 @@ export default function App() {
   const emProducao = filtered.filter(d => d.statusGeral === 'Em Produção').length
   const atrasados = filtered.filter(d => d.statusGeral === 'Atrasado').length
   const pctConcluido = totalKits > 0 ? Math.round((concluidos / totalKits) * 100) : 0
+  const pctEmProducao = totalKits > 0 ? Math.round((emProducao / totalKits) * 100) : 0
+  const pctAtrasados = totalKits > 0 ? Math.round((atrasados / totalKits) * 100) : 0
 
   // Chart: Status distribution (excluding Concluído to show only active pipeline)
   const statusChartData = useMemo(() => {
@@ -502,8 +504,8 @@ export default function App() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <KpiCard label="Total de Kits" value={totalKits.toLocaleString()} icon={<FolderKanban className="h-5 w-5" />} color="indigo" sub="Registros filtrados" />
                 <KpiCard label="Concluídos" value={`${pctConcluido}%`} icon={<CheckCircle2 className="h-5 w-5" />} color="emerald" sub={`${concluidos.toLocaleString()} kits finalizados`} />
-                <KpiCard label="Em Produção" value={emProducao.toLocaleString()} icon={<Loader2 className="h-5 w-5" />} color="blue" sub="Kits ativos na fábrica" />
-                <KpiCard label="Atrasados" value={atrasados.toLocaleString()} icon={<AlertTriangle className="h-5 w-5" />} color="red" sub={`${totalKits > 0 ? Math.round((atrasados / totalKits) * 100) : 0}% do total filtrado`} />
+                <KpiCard label="Em Produção" value={`${pctEmProducao}%`} icon={<Loader2 className="h-5 w-5" />} color="blue" sub={`${emProducao.toLocaleString()} kits em produção`} />
+                <KpiCard label="Atrasados" value={`${pctAtrasados}%`} icon={<AlertTriangle className="h-5 w-5" />} color="red" sub={`${atrasados.toLocaleString()} kits atrasados`} />
               </div>
 
               {/* Charts row */}
@@ -926,16 +928,16 @@ function KpiCard({ label, value, icon, color, sub }: { label: string; value: str
   }
   const c = colorMap[color] || colorMap.indigo
   return (
-    <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden group">
-      <div className={`absolute top-0 right-0 h-24 w-24 ${c.glow} rounded-full blur-2xl -mr-4 -mt-4 group-hover:opacity-150 transition-opacity`}></div>
+    <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 relative overflow-hidden group">
+      <div className={`absolute top-0 right-0 h-28 w-28 ${c.glow} rounded-full blur-2xl -mr-4 -mt-4 group-hover:opacity-150 transition-opacity`}></div>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-slate-400">{label}</span>
-        <div className={`h-9 w-9 rounded-xl ${c.bg} ${c.text} flex items-center justify-center`}>{icon}</div>
+        <span className="text-sm font-bold text-slate-400 uppercase tracking-wider">{label}</span>
+        <div className={`h-10 w-10 rounded-xl ${c.bg} ${c.text} flex items-center justify-center`}>{icon}</div>
       </div>
-      <div className="mt-3">
-        <span className="text-2xl font-extrabold text-white">{value}</span>
+      <div className="mt-4">
+        <span className="text-4xl font-black text-white tracking-tight">{value}</span>
       </div>
-      <p className="text-[10px] text-slate-500 mt-1">{sub}</p>
+      <p className="text-xs font-semibold text-slate-400 mt-1.5">{sub}</p>
     </div>
   )
 }
