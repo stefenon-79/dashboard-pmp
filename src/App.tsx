@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, Cell, LabelList
+  ResponsiveContainer, Cell, LabelList, PieChart, Pie
 } from 'recharts'
 import {
   LayoutDashboard, FolderKanban,
@@ -130,7 +130,7 @@ export default function App() {
   const atrasados = filtered.filter(d => d.statusGeral === 'Atrasado').length
   const pctConcluido = totalKits > 0 ? Math.round((concluidos / totalKits) * 100) : 0
 
-  // Chart: Status distribution
+  // Chart: Status distribution (excluding Concluído to show only active pipeline)
   const statusChartData = useMemo(() => {
     const counts: Record<string, number> = {}
     filtered.forEach(d => {
@@ -138,7 +138,7 @@ export default function App() {
       counts[s] = (counts[s] || 0) + 1
     })
     return Object.entries(counts)
-      .filter(([k]) => k !== '0' && k !== 'Indefinido')
+      .filter(([k]) => k !== '0' && k !== 'Indefinido' && k !== 'Concluído')
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
   }, [filtered])
@@ -392,21 +392,37 @@ export default function App() {
               {/* Charts row */}
               <div className="grid gap-6 lg:grid-cols-3">
                 {/* Status chart */}
-                <ChartCard title="Distribuição por Status" className="lg:col-span-1">
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={statusChartData} layout="vertical" margin={{ left: 10, right: 30 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={100} tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="value" name="Kits" radius={[0, 6, 6, 0]}>
-                        <LabelList dataKey="value" position="right" fill="#cbd5e1" fontSize={10} style={{ fontWeight: 'bold' }} />
-                        {statusChartData.map((entry, i) => (
-                          <Cell key={i} fill={STATUS_COLORS[entry.name] || '#6366f1'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                <ChartCard title="Itens Ativos por Status" className="lg:col-span-1">
+                  <div className="relative flex items-center justify-center" style={{ height: 250 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={statusChartData}
+                          cx="50%"
+                          cy="45%"
+                          innerRadius={60}
+                          outerRadius={85}
+                          paddingAngle={4}
+                          dataKey="value"
+                          nameKey="name"
+                        >
+                          {statusChartData.map((entry, i) => (
+                            <Cell key={i} fill={STATUS_COLORS[entry.name] || '#6366f1'} />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute flex flex-col items-center justify-center text-center pointer-events-none" style={{ top: 'calc(45% - 20px)' }}>
+                      <span className="text-2xl font-black text-white">
+                        {(atrasados + emProducao).toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
+                        Ativos
+                      </span>
+                    </div>
+                  </div>
                 </ChartCard>
 
                 {/* Pareto Etapas Atrasadas */}
@@ -415,7 +431,7 @@ export default function App() {
                     <ResponsiveContainer width="100%" height={250}>
                       <BarChart data={paretoEtapasData} margin={{ left: -10, right: 10, top: 15 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                        <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} angle={-30} textAnchor="end" height={60} interval={0} />
+                        <XAxis dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 'medium' }} angle={-30} textAnchor="end" height={70} interval={0} />
                         <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Qtd Itens', angle: -90, position: 'insideLeft', fill: '#94a3b8', style: { textAnchor: 'middle' }, offset: 0 }} />
                         <Tooltip content={<CustomTooltip />} />
                         <Bar dataKey="Quantidade" fill="#ef4444" name="Qtd Atrasos" radius={[4, 4, 0, 0]} barSize={24}>
