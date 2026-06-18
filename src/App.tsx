@@ -94,18 +94,18 @@ export default function App() {
   const [ltClienteFilter, setLtClienteFilter] = useState('todos')
 
   // Local table states (Atrasados)
-  const [atrasadosProj, setAtrasadosProj] = useState('')
-  const [atrasadosCli, setAtrasadosCli] = useState('')
-  const [atrasadosEquip, setAtrasadosEquip] = useState('')
-  const [atrasadosKit, setAtrasadosKit] = useState('')
+  const [atrasadosProj, setAtrasadosProj] = useState('todos')
+  const [atrasadosCli, setAtrasadosCli] = useState('todos')
+  const [atrasadosEquip, setAtrasadosEquip] = useState('todos')
+  const [atrasadosKit, setAtrasadosKit] = useState('todos')
   const [atrasadosEtap, setAtrasadosEtap] = useState('todos')
   const [atrasadosPage, setAtrasadosPage] = useState(1)
 
   // Local table states (Em Produção)
-  const [producaoProj, setProducaoProj] = useState('')
-  const [producaoCli, setProducaoCli] = useState('')
-  const [producaoEquip, setProducaoEquip] = useState('')
-  const [producaoKit, setProducaoKit] = useState('')
+  const [producaoProj, setProducaoProj] = useState('todos')
+  const [producaoCli, setProducaoCli] = useState('todos')
+  const [producaoEquip, setProducaoEquip] = useState('todos')
+  const [producaoKit, setProducaoKit] = useState('todos')
   const [producaoEtap, setProducaoEtap] = useState('todos')
   const [producaoPage, setProducaoPage] = useState(1)
 
@@ -120,6 +120,48 @@ export default function App() {
   const uniqueEtapas = useMemo(() => {
     const set = new Set(data.map(d => normalizeEtapa(d.etapa)).filter(e => e !== 'Outros'))
     return Array.from(set).sort()
+  }, [])
+
+  // Unique options for Atrasados table column dropdowns
+  const uniqueAtrasadosProj = useMemo(() => {
+    const list = data.filter(d => d.statusGeral === 'Atrasado').map(d => d.projeto).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [])
+
+  const uniqueAtrasadosCli = useMemo(() => {
+    const list = data.filter(d => d.statusGeral === 'Atrasado').map(d => d.cliente).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [])
+
+  const uniqueAtrasadosEquip = useMemo(() => {
+    const list = data.filter(d => d.statusGeral === 'Atrasado').map(d => d.equipamento).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [])
+
+  const uniqueAtrasadosKits = useMemo(() => {
+    const list = data.filter(d => d.statusGeral === 'Atrasado').map(d => d.kits).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [])
+
+  // Unique options for Em Produção table column dropdowns
+  const uniqueProducaoProj = useMemo(() => {
+    const list = data.filter(d => d.statusGeral === 'Em Produção').map(d => d.projeto).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [])
+
+  const uniqueProducaoCli = useMemo(() => {
+    const list = data.filter(d => d.statusGeral === 'Em Produção').map(d => d.cliente).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [])
+
+  const uniqueProducaoEquip = useMemo(() => {
+    const list = data.filter(d => d.statusGeral === 'Em Produção').map(d => d.equipamento).filter(Boolean)
+    return Array.from(new Set(list)).sort()
+  }, [])
+
+  const uniqueProducaoKits = useMemo(() => {
+    const list = data.filter(d => d.statusGeral === 'Em Produção').map(d => d.kits).filter(Boolean)
+    return Array.from(new Set(list)).sort()
   }, [])
 
   // Filtered data
@@ -186,10 +228,10 @@ export default function App() {
     return filtered
       .filter(d => d.statusGeral === 'Atrasado')
       .filter(d => {
-        const matchProj = atrasadosProj === '' || d.projeto.toLowerCase().includes(atrasadosProj.toLowerCase())
-        const matchCli = atrasadosCli === '' || d.cliente.toLowerCase().includes(atrasadosCli.toLowerCase())
-        const matchEquip = atrasadosEquip === '' || d.equipamento.toLowerCase().includes(atrasadosEquip.toLowerCase())
-        const matchKit = atrasadosKit === '' || d.kits.toLowerCase().includes(atrasadosKit.toLowerCase())
+        const matchProj = atrasadosProj === 'todos' || d.projeto === atrasadosProj
+        const matchCli = atrasadosCli === 'todos' || d.cliente === atrasadosCli
+        const matchEquip = atrasadosEquip === 'todos' || d.equipamento === atrasadosEquip
+        const matchKit = atrasadosKit === 'todos' || d.kits === atrasadosKit
         const matchEtap = atrasadosEtap === 'todos' || normalizeEtapa(d.etapa) === atrasadosEtap
         return matchProj && matchCli && matchEquip && matchKit && matchEtap
       })
@@ -200,10 +242,10 @@ export default function App() {
     return filtered
       .filter(d => d.statusGeral === 'Em Produção')
       .filter(d => {
-        const matchProj = producaoProj === '' || d.projeto.toLowerCase().includes(producaoProj.toLowerCase())
-        const matchCli = producaoCli === '' || d.cliente.toLowerCase().includes(producaoCli.toLowerCase())
-        const matchEquip = producaoEquip === '' || d.equipamento.toLowerCase().includes(producaoEquip.toLowerCase())
-        const matchKit = producaoKit === '' || d.kits.toLowerCase().includes(producaoKit.toLowerCase())
+        const matchProj = producaoProj === 'todos' || d.projeto === producaoProj
+        const matchCli = producaoCli === 'todos' || d.cliente === producaoCli
+        const matchEquip = producaoEquip === 'todos' || d.equipamento === producaoEquip
+        const matchKit = producaoKit === 'todos' || d.kits === producaoKit
         const matchEtap = producaoEtap === 'todos' || normalizeEtapa(d.etapa) === producaoEtap
         return matchProj && matchCli && matchEquip && matchKit && matchEtap
       })
@@ -507,46 +549,50 @@ export default function App() {
                       </tr>
                       <tr className="border-b border-slate-800/80 bg-slate-900/40">
                         <th className="p-1.5">
-                          <input
-                            type="text"
-                            placeholder="Filtrar..."
+                          <select
                             value={atrasadosProj}
                             onChange={e => { setAtrasadosProj(e.target.value); setAtrasadosPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          />
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todos</option>
+                            {uniqueAtrasadosProj.map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
                         </th>
                         <th className="p-1.5">
-                          <input
-                            type="text"
-                            placeholder="Filtrar..."
+                          <select
                             value={atrasadosCli}
                             onChange={e => { setAtrasadosCli(e.target.value); setAtrasadosPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          />
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todos</option>
+                            {uniqueAtrasadosCli.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
                         </th>
                         <th className="p-1.5">
-                          <input
-                            type="text"
-                            placeholder="Filtrar..."
+                          <select
                             value={atrasadosEquip}
                             onChange={e => { setAtrasadosEquip(e.target.value); setAtrasadosPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          />
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todos</option>
+                            {uniqueAtrasadosEquip.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                          </select>
                         </th>
                         <th className="p-1.5">
-                          <input
-                            type="text"
-                            placeholder="Filtrar..."
+                          <select
                             value={atrasadosKit}
                             onChange={e => { setAtrasadosKit(e.target.value); setAtrasadosPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          />
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todos</option>
+                            {uniqueAtrasadosKits.map(k => <option key={k} value={k}>{k}</option>)}
+                          </select>
                         </th>
                         <th className="p-1.5">
                           <select
                             value={atrasadosEtap}
                             onChange={e => { setAtrasadosEtap(e.target.value); setAtrasadosPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
                           >
                             <option value="todos">Todas</option>
                             {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
@@ -625,46 +671,50 @@ export default function App() {
                       </tr>
                       <tr className="border-b border-slate-800/80 bg-slate-900/40">
                         <th className="p-1.5">
-                          <input
-                            type="text"
-                            placeholder="Filtrar..."
+                          <select
                             value={producaoProj}
                             onChange={e => { setProducaoProj(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          />
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todos</option>
+                            {uniqueProducaoProj.map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
                         </th>
                         <th className="p-1.5">
-                          <input
-                            type="text"
-                            placeholder="Filtrar..."
+                          <select
                             value={producaoCli}
                             onChange={e => { setProducaoCli(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          />
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todos</option>
+                            {uniqueProducaoCli.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
                         </th>
                         <th className="p-1.5">
-                          <input
-                            type="text"
-                            placeholder="Filtrar..."
+                          <select
                             value={producaoEquip}
                             onChange={e => { setProducaoEquip(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          />
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todos</option>
+                            {uniqueProducaoEquip.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                          </select>
                         </th>
                         <th className="p-1.5">
-                          <input
-                            type="text"
-                            placeholder="Filtrar..."
+                          <select
                             value={producaoKit}
                             onChange={e => { setProducaoKit(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
-                          />
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="todos">Todos</option>
+                            {uniqueProducaoKits.map(k => <option key={k} value={k}>{k}</option>)}
+                          </select>
                         </th>
                         <th className="p-1.5">
                           <select
                             value={producaoEtap}
                             onChange={e => { setProducaoEtap(e.target.value); setProducaoPage(1); }}
-                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-2 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
+                            className="w-full bg-slate-800/60 border border-slate-700/50 rounded px-1.5 py-1 text-[11px] font-normal text-slate-200 focus:outline-none focus:border-indigo-500"
                           >
                             <option value="todos">Todas</option>
                             {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
