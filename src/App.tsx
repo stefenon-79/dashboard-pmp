@@ -48,11 +48,7 @@ const STATUS_COLORS: Record<string, string> = {
   '0': '#475569'
 }
 
-const CHART_COLORS = [
-  '#6366f1', '#8b5cf6', '#a78bfa', '#818cf8', '#7c3aed',
-  '#4f46e5', '#4338ca', '#3730a3', '#6d28d9', '#5b21b6',
-  '#c084fc', '#a855f7', '#9333ea', '#7e22ce', '#6b21a8'
-]
+
 
 // --- Helpers ---
 function normalizeEtapa(etapa: string): string {
@@ -96,6 +92,17 @@ export default function App() {
   // Lead time filters
   const [ltGroupBy, setLtGroupBy] = useState<'cliente' | 'conjGeral' | 'equipamento'>('cliente')
   const [ltClienteFilter, setLtClienteFilter] = useState('todos')
+
+  // Local table states
+  const [atrasadosSearch, setAtrasadosSearch] = useState('')
+  const [atrasadosEtapa, setAtrasadosEtapa] = useState('todos')
+  const [atrasadosPage, setAtrasadosPage] = useState(1)
+
+  const [producaoSearch, setProducaoSearch] = useState('')
+  const [producaoEtapa, setProducaoEtapa] = useState('todos')
+  const [producaoPage, setProducaoPage] = useState(1)
+
+  const ITEMS_PER_PAGE = 15
 
   // --- Computed data ---
   const uniqueClientes = useMemo(() => {
@@ -167,25 +174,51 @@ export default function App() {
     })
   }, [filtered])
 
-  // Chart: Kits por Etapa
-  const etapaChartData = useMemo(() => {
-    const counts: Record<string, number> = {}
-    filtered.forEach(d => {
-      const e = normalizeEtapa(d.etapa)
-      counts[e] = (counts[e] || 0) + 1
-    })
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 15)
-  }, [filtered])
-
-  // Delayed items table
-  const delayedItems = useMemo(() => {
+  // Delayed items filtered list
+  const filteredDelayedItems = useMemo(() => {
     return filtered
       .filter(d => d.statusGeral === 'Atrasado')
-      .slice(0, 20)
-  }, [filtered])
+      .filter(d => {
+        const matchSearch = atrasadosSearch === '' ||
+          d.projeto.toLowerCase().includes(atrasadosSearch.toLowerCase()) ||
+          d.cliente.toLowerCase().includes(atrasadosSearch.toLowerCase()) ||
+          d.equipamento.toLowerCase().includes(atrasadosSearch.toLowerCase()) ||
+          d.kits.toLowerCase().includes(atrasadosSearch.toLowerCase())
+        const matchEtapa = atrasadosEtapa === 'todos' || normalizeEtapa(d.etapa) === atrasadosEtapa
+        return matchSearch && matchEtapa
+      })
+  }, [filtered, atrasadosSearch, atrasadosEtapa])
+
+  // Em Produção items filtered list
+  const filteredProducaoItems = useMemo(() => {
+    return filtered
+      .filter(d => d.statusGeral === 'Em Produção')
+      .filter(d => {
+        const matchSearch = producaoSearch === '' ||
+          d.projeto.toLowerCase().includes(producaoSearch.toLowerCase()) ||
+          d.cliente.toLowerCase().includes(producaoSearch.toLowerCase()) ||
+          d.equipamento.toLowerCase().includes(producaoSearch.toLowerCase()) ||
+          d.kits.toLowerCase().includes(producaoSearch.toLowerCase())
+        const matchEtapa = producaoEtapa === 'todos' || normalizeEtapa(d.etapa) === producaoEtapa
+        return matchSearch && matchEtapa
+      })
+  }, [filtered, producaoSearch, producaoEtapa])
+
+  const totalAtrasadosPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredDelayedItems.length / ITEMS_PER_PAGE))
+  }, [filteredDelayedItems])
+
+  const paginatedAtrasados = useMemo(() => {
+    return filteredDelayedItems.slice((atrasadosPage - 1) * ITEMS_PER_PAGE, atrasadosPage * ITEMS_PER_PAGE)
+  }, [filteredDelayedItems, atrasadosPage])
+
+  const totalProducaoPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredProducaoItems.length / ITEMS_PER_PAGE))
+  }, [filteredProducaoItems])
+
+  const paginatedProducao = useMemo(() => {
+    return filteredProducaoItems.slice((producaoPage - 1) * ITEMS_PER_PAGE, producaoPage * ITEMS_PER_PAGE)
+  }, [filteredProducaoItems, producaoPage])
 
   // --- Lead Time Calculation ---
   const leadTimeData = useMemo(() => {
@@ -447,45 +480,50 @@ export default function App() {
                 </ChartCard>
               </div>
 
-              {/* Etapa chart - full width */}
-              <ChartCard title="Kits por Etapa Produtiva">
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={etapaChartData} margin={{ bottom: 60, top: 15 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} angle={-45} textAnchor="end" height={80} />
-                    <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="value" name="Kits" radius={[6, 6, 0, 0]}>
-                      <LabelList dataKey="value" position="top" fill="#cbd5e1" fontSize={9} style={{ fontWeight: 'bold' }} />
-                      {etapaChartData.map((_, i) => (
-                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
               {/* Delayed items table */}
-              {delayedItems.length > 0 && (
-                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2 mb-4">
-                    <AlertTriangle className="h-5 w-5 text-red-400" /> Itens Atrasados ({atrasados})
+              <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-red-400" /> Itens Atrasados ({filteredDelayedItems.length})
                   </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
-                          <th className="py-3 px-3 text-left font-semibold">Projeto</th>
-                          <th className="py-3 px-3 text-left font-semibold">Cliente</th>
-                          <th className="py-3 px-3 text-left font-semibold">Equipamento</th>
-                          <th className="py-3 px-3 text-left font-semibold">Kit</th>
-                          <th className="py-3 px-3 text-left font-semibold">Etapa</th>
-                          <th className="py-3 px-3 text-center font-semibold">Sem. Prog.</th>
-                          <th className="py-3 px-3 text-center font-semibold">Sem. Real</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {delayedItems.map((item, i) => (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="Buscar nesta tabela..."
+                        value={atrasadosSearch}
+                        onChange={e => { setAtrasadosSearch(e.target.value); setAtrasadosPage(1); }}
+                        className="bg-slate-800/40 border border-slate-700/50 rounded-lg py-1 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+                    <select
+                      value={atrasadosEtapa}
+                      onChange={e => { setAtrasadosEtapa(e.target.value); setAtrasadosPage(1); }}
+                      className="bg-slate-800/40 border border-slate-700/50 rounded-lg py-1 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 transition-colors"
+                    >
+                      <option value="todos">Etapa: Todas</option>
+                      {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
+                        <th className="py-3 px-3 text-left font-semibold">Projeto</th>
+                        <th className="py-3 px-3 text-left font-semibold">Cliente</th>
+                        <th className="py-3 px-3 text-left font-semibold">Equipamento</th>
+                        <th className="py-3 px-3 text-left font-semibold">Kit</th>
+                        <th className="py-3 px-3 text-left font-semibold">Etapa</th>
+                        <th className="py-3 px-3 text-center font-semibold">Sem. Prog.</th>
+                        <th className="py-3 px-3 text-center font-semibold">Sem. Real</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedAtrasados.length > 0 ? (
+                        paginatedAtrasados.map((item, i) => (
                           <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                             <td className="py-2.5 px-3 font-medium text-slate-200">{item.projeto}</td>
                             <td className="py-2.5 px-3 text-slate-300">{item.cliente}</td>
@@ -495,12 +533,128 @@ export default function App() {
                             <td className="py-2.5 px-3 text-center text-blue-400 font-semibold">{item.programado}</td>
                             <td className="py-2.5 px-3 text-center text-red-400 font-semibold">{item.realizadoSemana || '-'}</td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-500">
+                            Nenhum item atrasado encontrado.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {totalAtrasadosPages > 1 && (
+                  <div className="flex items-center justify-between mt-4 text-xs text-slate-400 border-t border-slate-800/50 pt-4">
+                    <span>Mostrando página {atrasadosPage} de {totalAtrasadosPages} ({filteredDelayedItems.length} itens)</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        disabled={atrasadosPage === 1}
+                        onClick={() => setAtrasadosPage(p => Math.max(1, p - 1))}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 disabled:opacity-40 disabled:hover:bg-slate-800/60 transition-colors"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        disabled={atrasadosPage === totalAtrasadosPages}
+                        onClick={() => setAtrasadosPage(p => Math.min(totalAtrasadosPages, p + 1))}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 disabled:opacity-40 disabled:hover:bg-slate-800/60 transition-colors"
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Em Produção items table */}
+              <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Loader2 className="h-5 w-5 text-indigo-400 animate-spin" /> Itens Em Produção ({filteredProducaoItems.length})
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="Buscar nesta tabela..."
+                        value={producaoSearch}
+                        onChange={e => { setProducaoSearch(e.target.value); setProducaoPage(1); }}
+                        className="bg-slate-800/40 border border-slate-700/50 rounded-lg py-1 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+                    <select
+                      value={producaoEtapa}
+                      onChange={e => { setProducaoEtapa(e.target.value); setProducaoPage(1); }}
+                      className="bg-slate-800/40 border border-slate-700/50 rounded-lg py-1 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 transition-colors"
+                    >
+                      <option value="todos">Etapa: Todas</option>
+                      {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
+                    </select>
                   </div>
                 </div>
-              )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
+                        <th className="py-3 px-3 text-left font-semibold">Projeto</th>
+                        <th className="py-3 px-3 text-left font-semibold">Cliente</th>
+                        <th className="py-3 px-3 text-left font-semibold">Equipamento</th>
+                        <th className="py-3 px-3 text-left font-semibold">Kit</th>
+                        <th className="py-3 px-3 text-left font-semibold">Etapa</th>
+                        <th className="py-3 px-3 text-center font-semibold">Sem. Prog.</th>
+                        <th className="py-3 px-3 text-center font-semibold">Sem. Real</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedProducao.length > 0 ? (
+                        paginatedProducao.map((item, i) => (
+                          <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                            <td className="py-2.5 px-3 font-medium text-slate-200">{item.projeto}</td>
+                            <td className="py-2.5 px-3 text-slate-300">{item.cliente}</td>
+                            <td className="py-2.5 px-3 text-slate-400 max-w-[200px] truncate">{item.equipamento}</td>
+                            <td className="py-2.5 px-3 text-slate-400 max-w-[150px] truncate">{item.kits}</td>
+                            <td className="py-2.5 px-3"><span className="bg-slate-800 px-2 py-0.5 rounded text-slate-300">{normalizeEtapa(item.etapa)}</span></td>
+                            <td className="py-2.5 px-3 text-center text-blue-400 font-semibold">{item.programado}</td>
+                            <td className="py-2.5 px-3 text-center text-slate-400 font-semibold">{item.realizadoSemana || '-'}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-500">
+                            Nenhum item em produção encontrado.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {totalProducaoPages > 1 && (
+                  <div className="flex items-center justify-between mt-4 text-xs text-slate-400 border-t border-slate-800/50 pt-4">
+                    <span>Mostrando página {producaoPage} de {totalProducaoPages} ({filteredProducaoItems.length} itens)</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        disabled={producaoPage === 1}
+                        onClick={() => setProducaoPage(p => Math.max(1, p - 1))}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 disabled:opacity-40 disabled:hover:bg-slate-800/60 transition-colors"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        disabled={producaoPage === totalProducaoPages}
+                        onClick={() => setProducaoPage(p => Math.min(totalProducaoPages, p + 1))}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 disabled:opacity-40 disabled:hover:bg-slate-800/60 transition-colors"
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
 
