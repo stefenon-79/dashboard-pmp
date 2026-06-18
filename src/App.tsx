@@ -126,6 +126,41 @@ export default function App() {
   // Gantt states
   const [ganttClienteFilter, setGanttClienteFilter] = useState<string>('')
   const [expandedEquipments, setExpandedEquipments] = useState<Record<string, boolean>>({})
+  const [ganttStartWeek, setGanttStartWeek] = useState<number | null>(null)
+  const [ganttEndWeek, setGanttEndWeek] = useState<number | null>(null)
+  const [ganttStatusFilter, setGanttStatusFilter] = useState<string>('todos')
+
+  // Reset and set default start/end weeks when client changes
+  useEffect(() => {
+    if (!ganttClienteFilter) return
+    const clientRecords = data.filter(d => d.cliente === ganttClienteFilter)
+    if (clientRecords.length === 0) {
+      setGanttStartWeek(null)
+      setGanttEndWeek(null)
+      return
+    }
+
+    const allAbsWeeks: number[] = []
+    clientRecords.forEach(r => {
+      const anoAtual = parseInt(r.anoAtual) || 0
+      const anoReal = parseInt(r.anoReal) || 0
+      const prog = parseInt(r.programado) || 0
+      const real = parseInt(r.realizadoSemana) || 0
+
+      if (prog > 0 && anoAtual > 0) allAbsWeeks.push(anoAtual * 52 + prog)
+      if (real > 0 && anoReal > 0) allAbsWeeks.push(anoReal * 52 + real)
+    })
+
+    if (allAbsWeeks.length > 0) {
+      const minWeek = Math.min(...allAbsWeeks)
+      const maxWeek = Math.max(...allAbsWeeks)
+      setGanttStartWeek(minWeek)
+      setGanttEndWeek(maxWeek)
+    } else {
+      setGanttStartWeek(null)
+      setGanttEndWeek(null)
+    }
+  }, [ganttClienteFilter])
 
 
 
@@ -559,10 +594,10 @@ export default function App() {
 
   // --- Gantt Data Processing ---
   const ganttData = useMemo(() => {
-    if (!ganttClienteFilter) return { weekList: [], equipments: [] }
+    if (!ganttClienteFilter) return { weekList: [], fullWeekList: [], equipments: [], minWeek: 0, maxWeek: 0 }
 
     const clientRecords = data.filter(d => d.cliente === ganttClienteFilter)
-    if (clientRecords.length === 0) return { weekList: [], equipments: [] }
+    if (clientRecords.length === 0) return { weekList: [], fullWeekList: [], equipments: [], minWeek: 0, maxWeek: 0 }
 
     // 1. Gather all absolute weeks to define axis limits
     const allAbsWeeks: number[] = []
@@ -576,17 +611,30 @@ export default function App() {
       if (real > 0 && anoReal > 0) allAbsWeeks.push(anoReal * 52 + real)
     })
 
-    if (allAbsWeeks.length === 0) return { weekList: [], equipments: [] }
+    if (allAbsWeeks.length === 0) return { weekList: [], fullWeekList: [], equipments: [], minWeek: 0, maxWeek: 0 }
 
     const minWeek = Math.min(...allAbsWeeks)
     const maxWeek = Math.max(...allAbsWeeks)
     
-    // Safety cap to prevent browser hanging on bad data (max 156 weeks = 3 years)
-    const range = Math.min(156, maxWeek - minWeek + 1)
-    const weekList: { abs: number; number: number; year: number }[] = []
-    
-    for (let i = 0; i < range; i++) {
+    // Generate full list of weeks for dropdowns
+    const fullRange = Math.min(156, maxWeek - minWeek + 1)
+    const fullWeekList: { abs: number; number: number; year: number }[] = []
+    for (let i = 0; i < fullRange; i++) {
       const abs = minWeek + i
+      const year = Math.floor(abs / 52)
+      let num = abs % 52
+      if (num === 0) num = 52
+      fullWeekList.push({ abs, number: num, year })
+    }
+
+    // Determine cropped range
+    const startAbs = ganttStartWeek !== null ? ganttStartWeek : minWeek
+    const endAbs = ganttEndWeek !== null ? ganttEndWeek : maxWeek
+
+    const croppedRange = Math.max(1, endAbs - startAbs + 1)
+    const weekList: { abs: number; number: number; year: number }[] = []
+    for (let i = 0; i < croppedRange; i++) {
+      const abs = startAbs + i
       const year = Math.floor(abs / 52)
       let num = abs % 52
       if (num === 0) num = 52
@@ -631,7 +679,7 @@ export default function App() {
         stageGroups[s].push(r)
       })
 
-      const stages = Object.entries(stageGroups).map(([stageName, records]) => {
+      let stages = Object.entries(stageGroups).map(([stageName, records]) => {
         const progWeeks: number[] = []
         const realWeeks: number[] = []
 
@@ -670,6 +718,11 @@ export default function App() {
         }
       })
 
+      // Apply Gantt Status Filter on stages
+      if (ganttStatusFilter !== 'todos') {
+        stages = stages.filter(s => s.status === ganttStatusFilter)
+      }
+
       // Sort stages chronologically by programmed start week
       stages.sort((a, b) => {
         const startA = a.minProg !== null ? a.minProg : Infinity
@@ -685,18 +738,19 @@ export default function App() {
         status: overallStatus,
         stages
       }
-    })
+    }).filter(eq => eq.stages.length > 0) // Hide equipments with no matching stages
 
     // Sort equipments by project ID, then name
     equipments.sort((a, b) => a.projeto.localeCompare(b.projeto) || a.name.localeCompare(b.name))
 
     return {
       weekList,
+      fullWeekList,
       equipments,
-      minWeek,
-      maxWeek
+      minWeek: startAbs, // Use startAbs for left positioning offset!
+      maxWeek: endAbs
     }
-  }, [ganttClienteFilter])
+  }, [ganttClienteFilter, ganttStartWeek, ganttEndWeek, ganttStatusFilter])
 
   // Custom Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -1399,40 +1453,88 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Client Filter */}
-              <div className="flex flex-wrap gap-3 items-center bg-[#12141c] border border-slate-800/80 rounded-2xl p-4">
-                <div className="flex items-center gap-2 text-xs text-slate-400 font-bold">
-                  <Filter className="h-4 w-4" /> Selecionar Cliente:
-                </div>
-                <select
-                  value={ganttClienteFilter}
-                  onChange={e => setGanttClienteFilter(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer"
-                >
-                  {uniqueClientes.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+              {/* Client & Filters Row */}
+              <div className="grid gap-4 md:grid-cols-12 items-center bg-[#12141c] border border-slate-800/80 rounded-2xl p-4">
                 
+                {/* Client dropdown */}
+                <div className="md:col-span-3 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Cliente</label>
+                  <select
+                    value={ganttClienteFilter}
+                    onChange={e => setGanttClienteFilter(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    {uniqueClientes.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Start Week dropdown */}
+                <div className="md:col-span-2 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Semana Início</label>
+                  <select
+                    value={ganttStartWeek !== null ? ganttStartWeek : ''}
+                    onChange={e => setGanttStartWeek(e.target.value ? parseInt(e.target.value) : null)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    {ganttData.fullWeekList.map(w => (
+                      <option key={w.abs} value={w.abs}>S{w.number} ({w.year})</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* End Week dropdown */}
+                <div className="md:col-span-2 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Semana Fim</label>
+                  <select
+                    value={ganttEndWeek !== null ? ganttEndWeek : ''}
+                    onChange={e => setGanttEndWeek(e.target.value ? parseInt(e.target.value) : null)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    {ganttData.fullWeekList
+                      .filter(w => ganttStartWeek === null || w.abs >= ganttStartWeek)
+                      .map(w => (
+                        <option key={w.abs} value={w.abs}>S{w.number} ({w.year})</option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* Status Filter */}
+                <div className="md:col-span-2 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Status Etapa</label>
+                  <select
+                    value={ganttStatusFilter}
+                    onChange={e => setGanttStatusFilter(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    <option value="todos">Todos os Status</option>
+                    <option value="Concluído">Concluído</option>
+                    <option value="Em Produção">Em Produção</option>
+                    <option value="Atrasado">Atrasado</option>
+                  </select>
+                </div>
+
                 {/* Gantt Legend */}
-                <div className="ml-auto flex flex-wrap gap-4 items-center text-xs">
+                <div className="md:col-span-3 flex flex-wrap gap-x-4 gap-y-2 justify-end self-end h-full py-1 text-[10px]">
                   <div className="flex items-center gap-1.5 text-slate-400">
-                    <div className="h-3 w-6 bg-[#6366f1]/60 border border-[#6366f1]/30 rounded"></div>
-                    <span>Semana Programada</span>
+                    <div className="h-2.5 w-4 bg-[#6366f1]/60 border border-[#6366f1]/30 rounded"></div>
+                    <span>Prog.</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-slate-400">
-                    <div className="h-3 w-6 bg-emerald-500/70 border border-emerald-400/30 rounded"></div>
-                    <span>Realizado (Concluído)</span>
+                    <div className="h-2.5 w-4 bg-emerald-500/70 border border-emerald-400/30 rounded"></div>
+                    <span>Concluído</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-slate-400">
-                    <div className="h-3 w-6 bg-blue-500/70 border border-blue-400/30 rounded"></div>
-                    <span>Em Produção</span>
+                    <div className="h-2.5 w-4 bg-blue-500/70 border border-blue-400/30 rounded"></div>
+                    <span>Produção</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-slate-400">
-                    <div className="h-3 w-6 bg-red-500/70 border border-red-400/30 rounded"></div>
+                    <div className="h-2.5 w-4 bg-red-500/70 border border-red-400/30 rounded"></div>
                     <span>Atrasado</span>
                   </div>
                 </div>
+
               </div>
 
               {/* Gantt Chart Panel */}
