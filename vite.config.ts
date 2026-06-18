@@ -13,7 +13,7 @@ const updateDataPlugin = () => ({
       if (req.url === '/api/update') {
         console.log('Received request to update PMP data from Excel...')
         
-        exec('powershell -ExecutionPolicy Bypass -File export-data.ps1', (error, _stdout, _stderr) => {
+        exec('powershell -ExecutionPolicy Bypass -File export-data.ps1', { maxBuffer: 1024 * 1024 * 10 }, (error, _stdout, _stderr) => {
           if (error) {
             console.error(`Error running export-data.ps1: ${error.message}`)
             res.statusCode = 500
