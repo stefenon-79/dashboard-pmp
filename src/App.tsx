@@ -1,169 +1,270 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
-  LayoutDashboard,
-  FolderKanban,
-  CheckSquare,
-  Users,
-  Plus,
-  Search,
-  Bell,
-  TrendingUp,
-  Clock,
-  DollarSign,
-  CheckCircle2,
-  Calendar,
-  Layers,
-  Sparkles,
-  Filter
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, Cell
+} from 'recharts'
+import {
+  LayoutDashboard, FolderKanban,
+  Search, Layers, Sparkles, Filter, Clock,
+  AlertTriangle, CheckCircle2, Loader2, RefreshCw, Timer
 } from 'lucide-react'
+import rawData from './data/pmp-data.json'
 
-// Mock Initial Data
-interface Project {
-  id: string
-  name: string
-  client: string
-  cpi: number // Cost Performance Index
-  spi: number // Schedule Performance Index
-  progress: number
-  status: 'Em Andamento' | 'Planejamento' | 'Concluído' | 'Atrasado'
-  dueDate: string
-  teamCount: number
+// --- Types ---
+interface PmpRecord {
+  anoAtual: string
+  anoReal: string
+  mesProg: string
+  prazoEntrega: string
+  dataLiberacao: string
+  projeto: string
+  cliente: string
+  lc: string
+  cjEquipamento: string
+  conjGeral: string
+  equipamento: string
+  kits: string
+  etapa: string
+  progSemana: string
+  realSemana: string
+  statusAuto: string
+  reprogSemana: string
+  reprogRealSemana: string
+  statusManual: string
+  observacao: string
+  avanco: string
+  statusGeral: string
+  realizadoSemana: string
+  programado: string
 }
 
-interface Task {
-  id: string
-  text: string
-  completed: boolean
-  priority: 'Baixa' | 'Média' | 'Alta'
-  project: string
+const data: PmpRecord[] = rawData as PmpRecord[]
+
+// --- Color palette ---
+const STATUS_COLORS: Record<string, string> = {
+  'Concluído': '#10b981',
+  'Em Produção': '#6366f1',
+  'Atrasado': '#ef4444',
+  '0': '#475569'
 }
 
+const CHART_COLORS = [
+  '#6366f1', '#8b5cf6', '#a78bfa', '#818cf8', '#7c3aed',
+  '#4f46e5', '#4338ca', '#3730a3', '#6d28d9', '#5b21b6',
+  '#c084fc', '#a855f7', '#9333ea', '#7e22ce', '#6b21a8'
+]
+
+// --- Helpers ---
+function normalizeEtapa(etapa: string): string {
+  const e = etapa.trim().toLowerCase()
+  if (e.includes('corte perfis')) return 'Corte Perfis'
+  if (e.includes('corte')) return 'Corte'
+  if (e.includes('caldeiraria') || e.includes('calderaria')) return 'Caldeiraria'
+  if (e.includes('usinagem estrutura')) return 'Usinagem Estrutura'
+  if (e.includes('usinagem acess')) return 'Usinagem Acessórios'
+  if (e.includes('usinagem cilindros') || e.includes('usinagem de cilindros') || e.includes('usinagem rolos') || e.includes('cilindros/rolos')) return 'Usinagem Cilindros'
+  if (e.includes('pre cdi') || e.includes('pré cdi')) return 'Pré CDI'
+  if (e.includes('cdi')) return 'CDI'
+  if (e.includes('acabamento')) return 'Acabamento'
+  if (e.includes('montagem piping')) return 'Montagem Piping'
+  if (e.includes('montagem caixa')) return 'Montagem Cx Entrada'
+  if (e.includes('montagem rolos')) return 'Montagem Rolos'
+  if (e.includes('montagem acess')) return 'Montagem Acessórios'
+  if (e.includes('montagem 1')) return 'Montagem 1'
+  if (e.includes('montagem 2')) return 'Montagem 2'
+  if (e.includes('montagem')) return 'Montagem'
+  if (e.includes('terceiriz') || e.includes('terceiros')) return 'Terceirização'
+  if (e.includes('prepara')) return 'Preparação'
+  if (e.includes('anodiza')) return 'Anodização'
+  if (e.includes('revestimento rolos')) return 'Revestimento Rolos'
+  if (e.includes('revestimento caldeiraria')) return 'Revestimento Caldeiraria'
+  if (e.includes('balanceamento')) return 'Balanceamento'
+  if (e.includes('grav')) return 'Grav. Laser'
+  if (e.includes('solda')) return 'Solda Alumínio'
+  if (e.includes('expans')) return 'Expansão de Tubos'
+  return etapa.trim() || 'Outros'
+}
+
+// --- Main App ---
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'tasks' | 'team'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'leadtime'>('overview')
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('todos')
-  
-  // States
-  const [projects, setProjects] = useState<Project[]>([
-    {
-      id: '1',
-      name: 'Fluir - Consulting Site Builder',
-      client: 'Fluir Consultoria',
-      cpi: 1.08,
-      spi: 1.02,
-      progress: 85,
-      status: 'Em Andamento',
-      dueDate: '25/06/2026',
-      teamCount: 3
-    },
-    {
-      id: '2',
-      name: 'Implementação Lean - Fábrica Metalúrgica',
-      client: 'Metalúrgica Silva',
-      cpi: 0.95,
-      spi: 0.88,
-      progress: 45,
-      status: 'Atrasado',
-      dueDate: '10/08/2026',
-      teamCount: 5
-    },
-    {
-      id: '3',
-      name: 'Mapeamento de Fluxo de Valor (VSM)',
-      client: 'Logística RS',
-      cpi: 1.00,
-      spi: 1.00,
-      progress: 100,
-      status: 'Concluído',
-      dueDate: '15/05/2026',
-      teamCount: 2
-    },
-    {
-      id: '4',
-      name: 'Normalização de Tempos de Processos',
-      client: 'Indústria Têxtil Canoas',
-      cpi: 1.12,
-      spi: 1.05,
-      progress: 15,
-      status: 'Planejamento',
-      dueDate: '30/09/2026',
-      teamCount: 4
+  const [statusFilter, setStatusFilter] = useState('todos')
+  const [clienteFilter, setClienteFilter] = useState('todos')
+  const [etapaFilter, setEtapaFilter] = useState('todos')
+
+  // Lead time filters
+  const [ltGroupBy, setLtGroupBy] = useState<'cliente' | 'conjGeral' | 'equipamento'>('cliente')
+  const [ltClienteFilter, setLtClienteFilter] = useState('todos')
+
+  // --- Computed data ---
+  const uniqueClientes = useMemo(() => {
+    const set = new Set(data.map(d => d.cliente).filter(Boolean))
+    return Array.from(set).sort()
+  }, [])
+
+  const uniqueEtapas = useMemo(() => {
+    const set = new Set(data.map(d => normalizeEtapa(d.etapa)).filter(e => e !== 'Outros'))
+    return Array.from(set).sort()
+  }, [])
+
+  // Filtered data
+  const filtered = useMemo(() => {
+    return data.filter(d => {
+      const matchSearch = searchQuery === '' ||
+        d.projeto.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.cliente.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.equipamento.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.kits.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchStatus = statusFilter === 'todos' || d.statusGeral === statusFilter
+      const matchCliente = clienteFilter === 'todos' || d.cliente === clienteFilter
+      const matchEtapa = etapaFilter === 'todos' || normalizeEtapa(d.etapa) === etapaFilter
+      return matchSearch && matchStatus && matchCliente && matchEtapa
+    })
+  }, [searchQuery, statusFilter, clienteFilter, etapaFilter])
+
+  // KPIs
+  const totalKits = filtered.length
+  const concluidos = filtered.filter(d => d.statusGeral === 'Concluído').length
+  const emProducao = filtered.filter(d => d.statusGeral === 'Em Produção').length
+  const atrasados = filtered.filter(d => d.statusGeral === 'Atrasado').length
+  const pctConcluido = totalKits > 0 ? Math.round((concluidos / totalKits) * 100) : 0
+
+  // Chart: Status distribution
+  const statusChartData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    filtered.forEach(d => {
+      const s = d.statusGeral || 'Indefinido'
+      counts[s] = (counts[s] || 0) + 1
+    })
+    return Object.entries(counts)
+      .filter(([k]) => k !== '0' && k !== 'Indefinido')
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+  }, [filtered])
+
+  // Chart: Top 10 Clientes
+  const topClientesData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    filtered.forEach(d => {
+      if (d.cliente) counts[d.cliente] = (counts[d.cliente] || 0) + 1
+    })
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10)
+  }, [filtered])
+
+  // Chart: Kits por Etapa
+  const etapaChartData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    filtered.forEach(d => {
+      const e = normalizeEtapa(d.etapa)
+      counts[e] = (counts[e] || 0) + 1
+    })
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 15)
+  }, [filtered])
+
+  // Delayed items table
+  const delayedItems = useMemo(() => {
+    return filtered
+      .filter(d => d.statusGeral === 'Atrasado')
+      .slice(0, 20)
+  }, [filtered])
+
+  // --- Lead Time Calculation ---
+  const leadTimeData = useMemo(() => {
+    // Filter by client if selected
+    const ltFiltered = ltClienteFilter === 'todos'
+      ? data
+      : data.filter(d => d.cliente === ltClienteFilter)
+
+    // Group by the selected dimension
+    const groups: Record<string, PmpRecord[]> = {}
+    ltFiltered.forEach(d => {
+      let key = ''
+      if (ltGroupBy === 'cliente') key = d.cliente
+      else if (ltGroupBy === 'conjGeral') key = d.conjGeral
+      else key = d.equipamento
+      if (!key || key.trim() === '') return
+      if (!groups[key]) groups[key] = []
+      groups[key].push(d)
+    })
+
+    // Calculate lead time for each group
+    const results: { name: string; ltProgramado: number; ltRealizado: number; desvio: number; count: number }[] = []
+
+    Object.entries(groups).forEach(([name, records]) => {
+      // Get numeric week values, accounting for year
+      const programadoWeeks: number[] = []
+      const realizadoWeeks: number[] = []
+
+      records.forEach(r => {
+        const anoAtual = parseInt(r.anoAtual) || 0
+        const anoReal = parseInt(r.anoReal) || 0
+        const prog = parseInt(r.programado) || 0
+        const real = parseInt(r.realizadoSemana) || 0
+
+        if (prog > 0 && anoAtual > 0) {
+          programadoWeeks.push(anoAtual * 52 + prog)
+        }
+        if (real > 0 && anoReal > 0) {
+          realizadoWeeks.push(anoReal * 52 + real)
+        }
+      })
+
+      if (programadoWeeks.length >= 2 && realizadoWeeks.length >= 2) {
+        const ltProg = Math.max(...programadoWeeks) - Math.min(...programadoWeeks)
+        const ltReal = Math.max(...realizadoWeeks) - Math.min(...realizadoWeeks)
+
+        if (ltProg > 0 || ltReal > 0) {
+          results.push({
+            name: name.length > 30 ? name.substring(0, 27) + '...' : name,
+            ltProgramado: ltProg,
+            ltRealizado: ltReal,
+            desvio: ltReal - ltProg,
+            count: records.length
+          })
+        }
+      }
+    })
+
+    return results
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15)
+  }, [ltGroupBy, ltClienteFilter])
+
+  // Custom Tooltip
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-[#1a1c28] border border-slate-700 rounded-xl p-3 shadow-xl text-xs">
+          <p className="font-bold text-white mb-1">{label}</p>
+          {payload.map((p: any, i: number) => (
+            <p key={i} style={{ color: p.color }} className="flex justify-between gap-4">
+              <span>{p.name}:</span>
+              <span className="font-bold">{p.value}</span>
+            </p>
+          ))}
+        </div>
+      )
     }
-  ])
-
-  const [tasks, setTasks] = useState<Task[]>([
-    { id: '1', text: 'Revisar escopo e cronograma do projeto Fluir', completed: true, priority: 'Alta', project: 'Fluir' },
-    { id: '2', text: 'Realizar dinâmica de VSM no chão de fábrica', completed: false, priority: 'Alta', project: 'Fábrica Metalúrgica' },
-    { id: '3', text: 'Ajustar variáveis de cálculo de lead time', completed: false, priority: 'Média', project: 'Normalização de Tempos' },
-    { id: '4', text: 'Homologar cronoanálise de processos', completed: true, priority: 'Baixa', project: 'Normalização de Tempos' },
-    { id: '5', text: 'Reunião de alinhamento com a diretoria', completed: false, priority: 'Média', project: 'Fluir' }
-  ])
-
-  const [newTaskText, setNewTaskText] = useState('')
-  const [newTaskPriority, setNewTaskPriority] = useState<'Baixa' | 'Média' | 'Alta'>('Média')
-
-  // Project Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [newProjName, setNewProjName] = useState('')
-  const [newProjClient, setNewProjClient] = useState('')
-  const [newProjStatus, setNewProjStatus] = useState<'Em Andamento' | 'Planejamento' | 'Concluído' | 'Atrasado'>('Planejamento')
-
-  // Handlers
-  const handleToggleTask = (taskId: string) => {
-    setTasks(tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t))
+    return null
   }
 
-  const handleAddTask = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newTaskText.trim()) return
-    const newTask: Task = {
-      id: Date.now().toString(),
-      text: newTaskText,
-      completed: false,
-      priority: newTaskPriority,
-      project: 'Geral'
-    }
-    setTasks([newTask, ...tasks])
-    setNewTaskText('')
-  }
-
-  const handleCreateProject = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newProjName.trim() || !newProjClient.trim()) return
-    const newProj: Project = {
-      id: Date.now().toString(),
-      name: newProjName,
-      client: newProjClient,
-      cpi: 1.00,
-      spi: 1.00,
-      progress: 0,
-      status: newProjStatus,
-      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR'),
-      teamCount: 1
-    }
-    setProjects([...projects, newProj])
-    setNewProjName('')
-    setNewProjClient('')
-    setIsModalOpen(false)
-  }
-
-  // Derived metrics
-  const filteredProjects = projects.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.client.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesFilter = statusFilter === 'todos' || p.status === statusFilter
-    return matchesSearch && matchesFilter
-  })
-
-  const averageCPI = parseFloat((projects.reduce((acc, p) => acc + p.cpi, 0) / projects.length).toFixed(2))
-  const averageSPI = parseFloat((projects.reduce((acc, p) => acc + p.spi, 0) / projects.length).toFixed(2))
-  const completedProjects = projects.filter(p => p.status === 'Concluído').length
+  // --- Sidebar tabs ---
+  const tabs = [
+    { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
+    { id: 'leadtime', label: 'Lead Time', icon: Timer },
+  ]
 
   return (
     <div className="flex min-h-screen bg-[#0d0e12] text-slate-100 font-sans antialiased selection:bg-indigo-500 selection:text-white">
       {/* Sidebar */}
       <aside className="w-64 border-r border-slate-800 bg-[#12141c] flex flex-col shrink-0">
-        {/* Logo */}
         <div className="h-20 flex items-center gap-3 px-6 border-b border-slate-800">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 shadow-lg shadow-indigo-500/20">
             <Layers className="h-5 w-5 text-white" />
@@ -172,20 +273,12 @@ export default function App() {
             <h1 className="text-lg font-bold bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent leading-none">
               PMP Dashboard
             </h1>
-            <span className="text-[10px] text-slate-500 font-semibold tracking-wider uppercase">
-              Gestão e Controle
-            </span>
+            <span className="text-[10px] text-slate-500 font-semibold tracking-wider uppercase">Hergen</span>
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-4 py-6 space-y-1">
-          {[
-            { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
-            { id: 'projects', label: 'Projetos (EAP)', icon: FolderKanban },
-            { id: 'tasks', label: 'Quadro de Tarefas', icon: CheckSquare },
-            { id: 'team', label: 'Equipe de Trabalho', icon: Users },
-          ].map(item => {
+          {tabs.map(item => {
             const Icon = item.icon
             const isActive = activeTab === item.id
             return (
@@ -198,574 +291,315 @@ export default function App() {
                     : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
                 }`}
               >
-                <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                <Icon className="h-5 w-5" />
                 {item.label}
               </button>
             )
           })}
         </nav>
 
-        {/* Footer info */}
-        <div className="p-4 border-t border-slate-800 bg-[#0d0e12]/40 text-xs text-slate-500 flex flex-col gap-1">
-          <div className="flex items-center gap-2 text-slate-400 font-medium">
-            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></div>
-            Sincronizado
-          </div>
-          <span>Repositório: GitHub</span>
+        <div className="p-4 border-t border-slate-800 text-xs text-slate-500">
+          <p className="flex items-center gap-2 text-slate-400 font-medium">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            {data.length.toLocaleString()} registros carregados
+          </p>
         </div>
       </aside>
 
-      {/* Main Content Area */}
+      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         {/* Header */}
-        <header className="h-20 border-b border-slate-800 bg-[#12141c]/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-8">
+        <header className="h-16 border-b border-slate-800 bg-[#12141c]/50 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-8">
           <div className="flex items-center gap-4 w-96">
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Buscar projetos, clientes ou tarefas..."
+                placeholder="Buscar projeto, cliente, kit..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full bg-slate-800/40 border border-slate-700/50 rounded-xl py-2 pl-10 pr-4 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/80 focus:ring-1 focus:ring-indigo-500/80 transition-colors"
               />
             </div>
           </div>
-
-          <div className="flex items-center gap-6">
-            <button className="relative h-10 w-10 flex items-center justify-center rounded-xl bg-slate-800/40 border border-slate-700/50 text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-indigo-500"></span>
+          <div className="flex items-center gap-3">
+            <button className="inline-flex items-center gap-2 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 text-xs font-medium px-3 py-2 rounded-xl transition-colors">
+              <RefreshCw className="h-3.5 w-3.5" /> Atualizar Dados
             </button>
-
-            {/* Profile */}
-            <div className="flex items-center gap-3 border-l border-slate-800 pl-6">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-500/10">
-                MS
-              </div>
-              <div className="hidden md:block text-left">
-                <p className="text-sm font-semibold text-slate-200 leading-tight">Márcio Stefenon</p>
-                <p className="text-xs text-slate-500">Gerente de Projetos (GP)</p>
-              </div>
-            </div>
           </div>
         </header>
 
-        {/* Content Body */}
-        <main className="flex-1 p-8 max-w-7xl w-full mx-auto space-y-8">
-          
-          {/* Active Tab: Visão Geral */}
+        <main className="flex-1 p-6 max-w-[1400px] w-full mx-auto space-y-6">
+
+          {/* ================== OVERVIEW TAB ================== */}
           {activeTab === 'overview' && (
             <>
-              {/* Header Title */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                    Painel Executivo PMP <Sparkles className="h-5 w-5 text-yellow-400 animate-pulse" />
-                  </h2>
-                  <p className="text-slate-400 text-sm mt-1">
-                    Métricas de valor agregado, status e indicadores de desempenho (EVM).
-                  </p>
-                </div>
-                <button 
-                  onClick={() => setIsModalOpen(true)}
-                  className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-600/10 transition-all hover:-translate-y-0.5"
-                >
-                  <Plus className="h-4 w-4" /> Novo Projeto
-                </button>
+              {/* Title */}
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                  Painel Executivo PMP <Sparkles className="h-4 w-4 text-yellow-400 animate-pulse" />
+                </h2>
+                <p className="text-slate-400 text-sm mt-0.5">Plano Mestre de Produção — visão consolidada do status de produção.</p>
               </div>
 
-              {/* KPI Grid */}
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                {/* KPI 1 */}
-                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 h-24 w-24 bg-indigo-600/5 rounded-full blur-2xl -mr-4 -mt-4 group-hover:bg-indigo-600/10 transition-colors"></div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-400">Total de Projetos</span>
-                    <div className="h-10 w-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-                      <FolderKanban className="h-5 w-5" />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold text-white">{projects.length}</span>
-                    <span className="text-xs text-emerald-400 font-medium flex items-center">+1 ativo</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-2">Volume de projetos na carteira</p>
+              {/* Filters row */}
+              <div className="flex flex-wrap gap-3 items-center">
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <Filter className="h-4 w-4" /> Filtros:
                 </div>
-
-                {/* KPI 2 */}
-                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 h-24 w-24 bg-emerald-600/5 rounded-full blur-2xl -mr-4 -mt-4 group-hover:bg-emerald-600/10 transition-colors"></div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-400">CPI (Índice de Custo)</span>
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${averageCPI >= 1 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                      <DollarSign className="h-5 w-5" />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold text-white">{averageCPI}</span>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${averageCPI >= 1 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                      {averageCPI >= 1 ? 'No Orçamento' : 'Acima do Custo'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-2">Média ponderada do portfólio</p>
-                </div>
-
-                {/* KPI 3 */}
-                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 h-24 w-24 bg-blue-600/5 rounded-full blur-2xl -mr-4 -mt-4 group-hover:bg-blue-600/10 transition-colors"></div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-400">SPI (Índice de Prazo)</span>
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${averageSPI >= 1 ? 'bg-blue-500/10 text-blue-400' : 'bg-yellow-500/10 text-yellow-400'}`}>
-                      <Clock className="h-5 w-5" />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold text-white">{averageSPI}</span>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${averageSPI >= 1 ? 'bg-blue-500/10 text-blue-400' : 'bg-yellow-500/10 text-yellow-400'}`}>
-                      {averageSPI >= 1 ? 'No Prazo' : 'Em Atraso'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-2">Índice de aderência ao cronograma</p>
-                </div>
-
-                {/* KPI 4 */}
-                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 h-24 w-24 bg-purple-600/5 rounded-full blur-2xl -mr-4 -mt-4 group-hover:bg-purple-600/10 transition-colors"></div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-400">Projetos Concluídos</span>
-                    <div className="h-10 w-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
-                      <CheckCircle2 className="h-5 w-5" />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-baseline gap-2">
-                    <span className="text-3xl font-extrabold text-white">
-                      {Math.round((completedProjects / projects.length) * 100)}%
-                    </span>
-                    <span className="text-xs text-slate-400 font-medium">{completedProjects} de {projects.length}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-2">Taxa de entrega com sucesso</p>
-                </div>
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                  <option value="todos">Status: Todos</option>
+                  <option value="Concluído">Concluído</option>
+                  <option value="Em Produção">Em Produção</option>
+                  <option value="Atrasado">Atrasado</option>
+                </select>
+                <select value={clienteFilter} onChange={e => setClienteFilter(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                  <option value="todos">Cliente: Todos</option>
+                  {uniqueClientes.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <select value={etapaFilter} onChange={e => setEtapaFilter(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                  <option value="todos">Etapa: Todas</option>
+                  {uniqueEtapas.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+                {(statusFilter !== 'todos' || clienteFilter !== 'todos' || etapaFilter !== 'todos' || searchQuery) && (
+                  <button onClick={() => { setStatusFilter('todos'); setClienteFilter('todos'); setEtapaFilter('todos'); setSearchQuery('') }}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 underline">Limpar filtros</button>
+                )}
               </div>
 
-              {/* Main Overview Dashboard Grid */}
-              <div className="grid gap-8 lg:grid-cols-3">
-                {/* Column 1 & 2: Project status */}
-                <div className="lg:col-span-2 space-y-6">
-                  <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-lg font-bold text-white">Status dos Projetos</h3>
-                      <div className="flex items-center gap-2">
-                        <Filter className="h-4 w-4 text-slate-500" />
-                        <select 
-                          value={statusFilter}
-                          onChange={e => setStatusFilter(e.target.value)}
-                          className="bg-slate-800 border border-slate-700 rounded-lg py-1 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
-                        >
-                          <option value="todos">Todos os Status</option>
-                          <option value="Em Andamento">Em Andamento</option>
-                          <option value="Planejamento">Planejamento</option>
-                          <option value="Atrasado">Atrasado</option>
-                          <option value="Concluído">Concluído</option>
-                        </select>
-                      </div>
-                    </div>
+              {/* KPIs */}
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <KpiCard label="Total de Kits" value={totalKits.toLocaleString()} icon={<FolderKanban className="h-5 w-5" />} color="indigo" sub="Registros filtrados" />
+                <KpiCard label="Concluídos" value={`${pctConcluido}%`} icon={<CheckCircle2 className="h-5 w-5" />} color="emerald" sub={`${concluidos.toLocaleString()} kits finalizados`} />
+                <KpiCard label="Em Produção" value={emProducao.toLocaleString()} icon={<Loader2 className="h-5 w-5" />} color="blue" sub="Kits ativos na fábrica" />
+                <KpiCard label="Atrasados" value={atrasados.toLocaleString()} icon={<AlertTriangle className="h-5 w-5" />} color="red" sub={`${totalKits > 0 ? Math.round((atrasados / totalKits) * 100) : 0}% do total filtrado`} />
+              </div>
 
-                    {/* Project List */}
-                    <div className="space-y-4">
-                      {filteredProjects.map(proj => (
-                        <div key={proj.id} className="bg-[#181a24] border border-slate-800 hover:border-slate-700/80 rounded-xl p-5 transition-all">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                            <div>
-                              <h4 className="font-semibold text-slate-200">{proj.name}</h4>
-                              <p className="text-xs text-slate-500 mt-0.5">Cliente: {proj.client}</p>
-                            </div>
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold self-start sm:self-center ${
-                              proj.status === 'Concluído' ? 'bg-emerald-500/10 text-emerald-400' :
-                              proj.status === 'Em Andamento' ? 'bg-indigo-500/10 text-indigo-400' :
-                              proj.status === 'Atrasado' ? 'bg-red-500/10 text-red-400' : 'bg-slate-700/30 text-slate-400'
-                            }`}>
-                              {proj.status}
-                            </span>
-                          </div>
+              {/* Charts row */}
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* Status chart */}
+                <ChartCard title="Distribuição por Status">
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={statusChartData} layout="vertical" margin={{ left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                      <YAxis type="category" dataKey="name" width={100} tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="value" name="Kits" radius={[0, 6, 6, 0]}>
+                        {statusChartData.map((entry, i) => (
+                          <Cell key={i} fill={STATUS_COLORS[entry.name] || '#6366f1'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
 
-                          {/* Progress bar */}
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-slate-400">Progresso do Escopo</span>
-                              <span className="font-semibold text-slate-200">{proj.progress}%</span>
-                            </div>
-                            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                              <div 
-                                className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-full rounded-full transition-all duration-500" 
-                                style={{ width: `${proj.progress}%` }}
-                              ></div>
-                            </div>
-                          </div>
+                {/* Top Clientes */}
+                <ChartCard title="Top 10 Clientes (por volume de kits)">
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={topClientesData} layout="vertical" margin={{ left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                      <YAxis type="category" dataKey="name" width={120} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="value" name="Kits" radius={[0, 6, 6, 0]}>
+                        {topClientesData.map((_, i) => (
+                          <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              </div>
 
-                          {/* Indicators Row */}
-                          <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-slate-800/80 text-center">
-                            <div>
-                              <p className="text-[10px] text-slate-500 uppercase tracking-wider">CPI (Custo)</p>
-                              <p className={`text-sm font-bold mt-0.5 ${proj.cpi >= 1 ? 'text-emerald-400' : 'text-red-400'}`}>{proj.cpi}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-slate-500 uppercase tracking-wider">SPI (Prazo)</p>
-                              <p className={`text-sm font-bold mt-0.5 ${proj.spi >= 1 ? 'text-blue-400' : 'text-yellow-400'}`}>{proj.spi}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-slate-500 uppercase tracking-wider">Entrega Prevista</p>
-                              <p className="text-sm font-semibold text-slate-400 mt-0.5">{proj.dueDate}</p>
-                            </div>
-                          </div>
-                        </div>
+              {/* Etapa chart - full width */}
+              <ChartCard title="Kits por Etapa Produtiva">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={etapaChartData} margin={{ bottom: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} angle={-45} textAnchor="end" height={80} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="value" name="Kits" radius={[6, 6, 0, 0]}>
+                      {etapaChartData.map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
 
-                      {filteredProjects.length === 0 && (
-                        <div className="text-center py-12 text-slate-500">
-                          Nenhum projeto encontrado com os filtros selecionados.
-                        </div>
-                      )}
-                    </div>
+              {/* Delayed items table */}
+              {delayedItems.length > 0 && (
+                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2 mb-4">
+                    <AlertTriangle className="h-5 w-5 text-red-400" /> Itens Atrasados ({atrasados})
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
+                          <th className="py-3 px-3 text-left font-semibold">Projeto</th>
+                          <th className="py-3 px-3 text-left font-semibold">Cliente</th>
+                          <th className="py-3 px-3 text-left font-semibold">Equipamento</th>
+                          <th className="py-3 px-3 text-left font-semibold">Kit</th>
+                          <th className="py-3 px-3 text-left font-semibold">Etapa</th>
+                          <th className="py-3 px-3 text-center font-semibold">Sem. Prog.</th>
+                          <th className="py-3 px-3 text-center font-semibold">Sem. Real</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {delayedItems.map((item, i) => (
+                          <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                            <td className="py-2.5 px-3 font-medium text-slate-200">{item.projeto}</td>
+                            <td className="py-2.5 px-3 text-slate-300">{item.cliente}</td>
+                            <td className="py-2.5 px-3 text-slate-400 max-w-[200px] truncate">{item.equipamento}</td>
+                            <td className="py-2.5 px-3 text-slate-400 max-w-[150px] truncate">{item.kits}</td>
+                            <td className="py-2.5 px-3"><span className="bg-slate-800 px-2 py-0.5 rounded text-slate-300">{normalizeEtapa(item.etapa)}</span></td>
+                            <td className="py-2.5 px-3 text-center text-blue-400 font-semibold">{item.programado}</td>
+                            <td className="py-2.5 px-3 text-center text-red-400 font-semibold">{item.realizadoSemana || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-
-                {/* Column 3: Task list & EVM summary */}
-                <div className="space-y-6">
-                  {/* Task list Card */}
-                  <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
-                    <h3 className="text-lg font-bold text-white mb-4">Minhas Tarefas</h3>
-                    
-                    {/* Add Task Form */}
-                    <form onSubmit={handleAddTask} className="flex gap-2 mb-4">
-                      <input
-                        type="text"
-                        placeholder="Nova tarefa..."
-                        value={newTaskText}
-                        onChange={e => setNewTaskText(e.target.value)}
-                        className="flex-1 bg-slate-800 border border-slate-700/60 rounded-xl py-2 px-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                      />
-                      <select
-                        value={newTaskPriority}
-                        onChange={e => setNewTaskPriority(e.target.value as any)}
-                        className="bg-slate-800 border border-slate-700/60 rounded-xl py-2 px-2 text-xs text-slate-300 focus:outline-none"
-                      >
-                        <option value="Baixa">Baixa</option>
-                        <option value="Média">Média</option>
-                        <option value="Alta">Alta</option>
-                      </select>
-                      <button 
-                        type="submit"
-                        className="bg-indigo-600 hover:bg-indigo-500 rounded-xl p-2.5 text-white flex items-center justify-center transition-colors"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </form>
-
-                    {/* Tasks Container */}
-                    <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
-                      {tasks.map(task => (
-                        <div 
-                          key={task.id} 
-                          className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                            task.completed 
-                              ? 'bg-slate-800/20 border-slate-800/60 opacity-60' 
-                              : 'bg-[#181a24] border-slate-800 hover:border-slate-700/60'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={task.completed}
-                              onChange={() => handleToggleTask(task.id)}
-                              className="h-4 w-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-800"
-                            />
-                            <span className={`text-xs font-medium ${task.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
-                              {task.text}
-                            </span>
-                          </div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
-                            task.priority === 'Alta' ? 'bg-red-500/10 text-red-400' :
-                            task.priority === 'Média' ? 'bg-yellow-500/10 text-yellow-400' : 'bg-slate-700/30 text-slate-400'
-                          }`}>
-                            {task.priority}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* EVM Reference card */}
-                  <div className="bg-gradient-to-br from-indigo-900/40 via-[#12141c] to-[#12141c] border border-indigo-500/20 rounded-2xl p-6">
-                    <h3 className="text-base font-bold text-white flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-indigo-400" /> Referências PMP (EVM)
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                      O gerenciamento do Valor Agregado compara o planejado com o realizado:
-                    </p>
-                    <div className="space-y-3 mt-4">
-                      <div className="flex items-start gap-2 text-xs">
-                        <div className="h-4 w-4 shrink-0 rounded bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold">≥</div>
-                        <p className="text-slate-300">
-                          <strong>CPI / SPI ≥ 1.0:</strong> Desempenho dentro ou melhor do que o planejado.
-                        </p>
-                      </div>
-                      <div className="flex items-start gap-2 text-xs">
-                        <div className="h-4 w-4 shrink-0 rounded bg-red-500/10 text-red-400 flex items-center justify-center font-bold">&lt;</div>
-                        <p className="text-slate-300">
-                          <strong>CPI / SPI &lt; 1.0:</strong> Projeto estourando custos ou atrasado.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
             </>
           )}
 
-          {/* Active Tab: Projects */}
-          {activeTab === 'projects' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-2xl font-bold tracking-tight text-white">Projetos & Estrutura Analítica (EAP)</h2>
-                  <p className="text-slate-400 text-sm mt-1">Gerencie todos os projetos ativos e seus respectivos cronogramas.</p>
+          {/* ================== LEAD TIME TAB ================== */}
+          {activeTab === 'leadtime' && (
+            <>
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-blue-400" /> Lead Time — Programado vs Realizado
+                </h2>
+                <p className="text-slate-400 text-sm mt-0.5">
+                  Comparação do lead time planejado contra o realizado (em semanas). 
+                  Cálculo: (semana da última etapa) − (semana da primeira etapa) por agrupamento.
+                </p>
+              </div>
+
+              {/* Lead time controls */}
+              <div className="flex flex-wrap gap-3 items-center">
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <Filter className="h-4 w-4" /> Controles:
                 </div>
-                <button 
-                  onClick={() => setIsModalOpen(true)}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-all"
-                >
-                  Criar Novo Projeto
-                </button>
-              </div>
-
-              <div className="grid gap-6 md:grid-cols-2">
-                {projects.map(proj => (
-                  <div key={proj.id} className="bg-[#12141c] border border-slate-800 p-6 rounded-2xl space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="text-lg font-bold text-white">{proj.name}</h3>
-                        <p className="text-xs text-slate-500">Cliente: {proj.client}</p>
-                      </div>
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        proj.status === 'Concluído' ? 'bg-emerald-500/10 text-emerald-400' :
-                        proj.status === 'Em Andamento' ? 'bg-indigo-500/10 text-indigo-400' :
-                        proj.status === 'Atrasado' ? 'bg-red-500/10 text-red-400' : 'bg-slate-700/30 text-slate-400'
-                      }`}>
-                        {proj.status}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-400">Progresso Geral</span>
-                        <span className="font-semibold text-slate-200">{proj.progress}%</span>
-                      </div>
-                      <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                        <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${proj.progress}%` }}></div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 bg-slate-900/40 p-3 rounded-xl text-center">
-                      <div>
-                        <p className="text-[10px] text-slate-500 uppercase">CPI (Desempenho de Custo)</p>
-                        <p className={`text-base font-extrabold mt-0.5 ${proj.cpi >= 1 ? 'text-emerald-400' : 'text-red-400'}`}>{proj.cpi}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-500 uppercase">SPI (Desempenho de Prazo)</p>
-                        <p className={`text-base font-extrabold mt-0.5 ${proj.spi >= 1 ? 'text-blue-400' : 'text-yellow-400'}`}>{proj.spi}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-center pt-2 text-xs text-slate-400">
-                      <span className="flex items-center gap-1.5">
-                        <Calendar className="h-4 w-4 text-slate-500" /> Fim planejado: {proj.dueDate}
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Users className="h-4 w-4 text-slate-500" /> {proj.teamCount} membros
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Active Tab: Tasks */}
-          {activeTab === 'tasks' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight text-white">Tarefas & Atividades</h2>
-                <p className="text-slate-400 text-sm mt-1">Controle de tarefas operacionais diárias do time de consultoria.</p>
-              </div>
-
-              <div className="bg-[#12141c] border border-slate-800 rounded-2xl p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                  <h3 className="font-bold text-white text-lg">Quadro de Atividades</h3>
-                  
-                  {/* Task Form */}
-                  <form onSubmit={handleAddTask} className="flex flex-wrap gap-2">
-                    <input
-                      type="text"
-                      placeholder="Adicionar tarefa rápida..."
-                      value={newTaskText}
-                      onChange={e => setNewTaskText(e.target.value)}
-                      className="bg-slate-800 border border-slate-700/60 rounded-xl py-2 px-3 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                    />
-                    <select
-                      value={newTaskPriority}
-                      onChange={e => setNewTaskPriority(e.target.value as any)}
-                      className="bg-slate-800 border border-slate-700/60 rounded-xl py-2 px-2 text-xs text-slate-300 focus:outline-none"
-                    >
-                      <option value="Baixa">Prioridade Baixa</option>
-                      <option value="Média">Prioridade Média</option>
-                      <option value="Alta">Prioridade Alta</option>
-                    </select>
-                    <button 
-                      type="submit"
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors"
-                    >
-                      Adicionar
-                    </button>
-                  </form>
-                </div>
-
-                <div className="space-y-3">
-                  {tasks.map(task => (
-                    <div 
-                      key={task.id} 
-                      className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
-                        task.completed 
-                          ? 'bg-slate-800/10 border-slate-800/50 opacity-60' 
-                          : 'bg-[#181a24] border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={task.completed}
-                          onChange={() => handleToggleTask(task.id)}
-                          className="h-5 w-5 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-800"
-                        />
-                        <span className={`text-sm ${task.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
-                          {task.text}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-500">Projeto: {task.project}</span>
-                        <span className={`text-xs px-2.5 py-1 rounded font-semibold ${
-                          task.priority === 'Alta' ? 'bg-red-500/10 text-red-400' :
-                          task.priority === 'Média' ? 'bg-yellow-500/10 text-yellow-400' : 'bg-slate-700/30 text-slate-400'
-                        }`}>
-                          {task.priority}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Active Tab: Team */}
-          {activeTab === 'team' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight text-white">Equipe do Projeto</h2>
-                <p className="text-slate-400 text-sm mt-1">Lista de consultores e especialistas alocados no portfólio de projetos.</p>
-              </div>
-
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {[
-                  { name: 'Márcio Stefenon', role: 'Gerente do Projeto (GP)', email: 'marcio.stefenon@fluirconsultoria.eng.br', initial: 'MS', projectsCount: 4 },
-                  { name: 'Roberto Alencar', role: 'Consultor Lean Manufacturing', email: 'roberto.alencar@fluirconsultoria.eng.br', initial: 'RA', projectsCount: 2 },
-                  { name: 'Mariana Duarte', role: 'Analista de Processos & Tempo', email: 'mariana.duarte@fluirconsultoria.eng.br', initial: 'MD', projectsCount: 3 },
-                ].map(member => (
-                  <div key={member.name} className="bg-[#12141c] border border-slate-800 rounded-2xl p-6 flex flex-col items-center text-center space-y-4">
-                    <div className="h-16 w-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xl font-bold border border-indigo-500/20">
-                      {member.initial}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white text-base">{member.name}</h3>
-                      <p className="text-xs text-indigo-400 font-medium mt-0.5">{member.role}</p>
-                      <p className="text-xs text-slate-500 mt-1">{member.email}</p>
-                    </div>
-                    <div className="w-full pt-4 border-t border-slate-800/80 flex justify-between items-center text-xs text-slate-400">
-                      <span>Projetos Alocados:</span>
-                      <span className="font-bold text-slate-200">{member.projectsCount}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-        </main>
-      </div>
-
-      {/* New Project Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#12141c] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
-            <h3 className="text-lg font-bold text-white mb-2">Novo Projeto PMP</h3>
-            <p className="text-xs text-slate-400 mb-6">Insira os dados iniciais do projeto para integrá-lo ao portfólio.</p>
-            
-            <form onSubmit={handleCreateProject} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5">Nome do Projeto</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Consultoria de Mapeamento VSM"
-                  value={newProjName}
-                  onChange={e => setNewProjName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700/60 rounded-xl py-2 px-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5">Cliente</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Empresa Exemplo Ltda"
-                  value={newProjClient}
-                  onChange={e => setNewProjClient(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700/60 rounded-xl py-2 px-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5">Status Inicial</label>
-                <select
-                  value={newProjStatus}
-                  onChange={e => setNewProjStatus(e.target.value as any)}
-                  className="w-full bg-slate-800 border border-slate-700/60 rounded-xl py-2 px-3 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="Planejamento">Planejamento</option>
-                  <option value="Em Andamento">Em Andamento</option>
+                <select value={ltGroupBy} onChange={e => setLtGroupBy(e.target.value as any)} className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                  <option value="cliente">Agrupar por: Cliente</option>
+                  <option value="conjGeral">Agrupar por: Conjunto Geral</option>
+                  <option value="equipamento">Agrupar por: Equipamento</option>
+                </select>
+                <select value={ltClienteFilter} onChange={e => setLtClienteFilter(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                  <option value="todos">Cliente: Todos</option>
+                  {uniqueClientes.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
 
-              <div className="flex gap-3 justify-end pt-4 border-t border-slate-800/80">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700/80 rounded-xl text-xs text-slate-300 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-600/10 transition-colors"
-                >
-                  Criar Projeto
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+              {/* Lead Time Chart */}
+              <ChartCard title={`Lead Time por ${ltGroupBy === 'cliente' ? 'Cliente' : ltGroupBy === 'conjGeral' ? 'Conjunto Geral' : 'Equipamento'} (semanas)`}>
+                {leadTimeData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={Math.max(300, leadTimeData.length * 40)}>
+                    <BarChart data={leadTimeData} layout="vertical" margin={{ left: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} label={{ value: 'Semanas', position: 'insideBottom', offset: -5, fill: '#64748b', fontSize: 11 }} />
+                      <YAxis type="category" dataKey="name" width={180} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+                      <Bar dataKey="ltProgramado" name="LT Programado" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={14} />
+                      <Bar dataKey="ltRealizado" name="LT Realizado" radius={[0, 4, 4, 0]} barSize={14}>
+                        {leadTimeData.map((entry, i) => (
+                          <Cell key={i} fill={entry.desvio > 0 ? '#ef4444' : '#10b981'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="text-center py-16 text-slate-500 text-sm">
+                    Sem dados suficientes para calcular o lead time com os filtros atuais.
+                  </div>
+                )}
+              </ChartCard>
+
+              {/* Lead Time Table */}
+              {leadTimeData.length > 0 && (
+                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
+                  <h3 className="text-base font-bold text-white mb-4">Detalhamento do Lead Time</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
+                          <th className="py-3 px-3 text-left font-semibold">
+                            {ltGroupBy === 'cliente' ? 'Cliente' : ltGroupBy === 'conjGeral' ? 'Conjunto Geral' : 'Equipamento'}
+                          </th>
+                          <th className="py-3 px-3 text-center font-semibold">LT Programado (sem)</th>
+                          <th className="py-3 px-3 text-center font-semibold">LT Realizado (sem)</th>
+                          <th className="py-3 px-3 text-center font-semibold">Desvio (sem)</th>
+                          <th className="py-3 px-3 text-center font-semibold">Kits</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leadTimeData.map((item, i) => (
+                          <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                            <td className="py-2.5 px-3 font-medium text-slate-200">{item.name}</td>
+                            <td className="py-2.5 px-3 text-center text-blue-400 font-semibold">{item.ltProgramado}</td>
+                            <td className="py-2.5 px-3 text-center font-semibold" style={{ color: item.desvio > 0 ? '#ef4444' : '#10b981' }}>
+                              {item.ltRealizado}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                                item.desvio > 0 ? 'bg-red-500/10 text-red-400' :
+                                item.desvio < 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/30 text-slate-400'
+                              }`}>
+                                {item.desvio > 0 ? '+' : ''}{item.desvio}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center text-slate-400">{item.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  )
+}
+
+// --- Reusable components ---
+function KpiCard({ label, value, icon, color, sub }: { label: string; value: string; icon: React.ReactNode; color: string; sub: string }) {
+  const colorMap: Record<string, { bg: string; text: string; glow: string }> = {
+    indigo: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', glow: 'bg-indigo-600/5' },
+    emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', glow: 'bg-emerald-600/5' },
+    blue: { bg: 'bg-blue-500/10', text: 'text-blue-400', glow: 'bg-blue-600/5' },
+    red: { bg: 'bg-red-500/10', text: 'text-red-400', glow: 'bg-red-600/5' },
+  }
+  const c = colorMap[color] || colorMap.indigo
+  return (
+    <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden group">
+      <div className={`absolute top-0 right-0 h-24 w-24 ${c.glow} rounded-full blur-2xl -mr-4 -mt-4 group-hover:opacity-150 transition-opacity`}></div>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-slate-400">{label}</span>
+        <div className={`h-9 w-9 rounded-xl ${c.bg} ${c.text} flex items-center justify-center`}>{icon}</div>
+      </div>
+      <div className="mt-3">
+        <span className="text-2xl font-extrabold text-white">{value}</span>
+      </div>
+      <p className="text-[10px] text-slate-500 mt-1">{sub}</p>
+    </div>
+  )
+}
+
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
+      <h3 className="text-sm font-bold text-white mb-4">{title}</h3>
+      {children}
     </div>
   )
 }
