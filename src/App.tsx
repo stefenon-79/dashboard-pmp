@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import {
   BarChart, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, Cell
+  ResponsiveContainer, Cell, LabelList
 } from 'recharts'
 import {
   LayoutDashboard, FolderKanban,
@@ -394,12 +394,13 @@ export default function App() {
                 {/* Status chart */}
                 <ChartCard title="Distribuição por Status">
                   <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={statusChartData} layout="vertical" margin={{ left: 10 }}>
+                    <BarChart data={statusChartData} layout="vertical" margin={{ left: 10, right: 30 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                       <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} />
                       <YAxis type="category" dataKey="name" width={100} tick={{ fill: '#94a3b8', fontSize: 11 }} />
                       <Tooltip content={<CustomTooltip />} />
                       <Bar dataKey="value" name="Kits" radius={[0, 6, 6, 0]}>
+                        <LabelList dataKey="value" position="right" fill="#cbd5e1" fontSize={10} style={{ fontWeight: 'bold' }} />
                         {statusChartData.map((entry, i) => (
                           <Cell key={i} fill={STATUS_COLORS[entry.name] || '#6366f1'} />
                         ))}
@@ -412,15 +413,19 @@ export default function App() {
                 <ChartCard title="Pareto de Etapas mais Atrasadas">
                   {paretoEtapasData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={250}>
-                      <ComposedChart data={paretoEtapasData} margin={{ left: -10, right: -10 }}>
+                      <ComposedChart data={paretoEtapasData} margin={{ left: -10, right: 10, top: 15 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                         <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 9 }} angle={-30} textAnchor="end" height={60} />
                         <YAxis yAxisId="left" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Qtd Itens', angle: -90, position: 'insideLeft', fill: '#94a3b8', style: { textAnchor: 'middle' }, offset: 0 }} />
-                        <YAxis yAxisId="right" orientation="right" stroke="#ef4444" domain={[0, 100]} unit="%" tick={{ fill: '#ef4444', fontSize: 10 }} />
+                        <YAxis yAxisId="right" orientation="right" stroke="#3b82f6" domain={[0, 100]} unit="%" tick={{ fill: '#3b82f6', fontSize: 10 }} />
                         <Tooltip content={<CustomTooltip />} />
                         <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
-                        <Bar yAxisId="left" dataKey="Quantidade" fill="#6366f1" name="Qtd Atrasos" radius={[4, 4, 0, 0]} barSize={20} />
-                        <Line yAxisId="right" type="monotone" dataKey="Pct Acumulado" name="% Acumulado" stroke="#ef4444" strokeWidth={2} dot={{ fill: '#ef4444', r: 4 }} activeDot={{ r: 6 }} />
+                        <Bar yAxisId="left" dataKey="Quantidade" fill="#ef4444" name="Qtd Atrasos" radius={[4, 4, 0, 0]} barSize={20}>
+                          <LabelList dataKey="Quantidade" position="top" fill="#cbd5e1" fontSize={9} style={{ fontWeight: 'bold' }} />
+                        </Bar>
+                        <Line yAxisId="right" type="monotone" dataKey="Pct Acumulado" name="% Acumulado" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }}>
+                          <LabelList dataKey="Pct Acumulado" position="top" fill="#3b82f6" fontSize={8} formatter={(val: any) => `${val}%`} />
+                        </Line>
                       </ComposedChart>
                     </ResponsiveContainer>
                   ) : (
@@ -434,12 +439,13 @@ export default function App() {
               {/* Etapa chart - full width */}
               <ChartCard title="Kits por Etapa Produtiva">
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={etapaChartData} margin={{ bottom: 60 }}>
+                  <BarChart data={etapaChartData} margin={{ bottom: 60, top: 15 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                     <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} angle={-45} textAnchor="end" height={80} />
                     <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
                     <Tooltip content={<CustomTooltip />} />
                     <Bar dataKey="value" name="Kits" radius={[6, 6, 0, 0]}>
+                      <LabelList dataKey="value" position="top" fill="#cbd5e1" fontSize={9} style={{ fontWeight: 'bold' }} />
                       {etapaChartData.map((_, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
@@ -520,14 +526,17 @@ export default function App() {
               <ChartCard title={`Lead Time por ${ltGroupBy === 'cliente' ? 'Cliente' : ltGroupBy === 'conjGeral' ? 'Conjunto Geral' : 'Equipamento'} (semanas)`}>
                 {leadTimeData.length > 0 ? (
                   <ResponsiveContainer width="100%" height={Math.max(300, leadTimeData.length * 40)}>
-                    <BarChart data={leadTimeData} layout="vertical" margin={{ left: 20 }}>
+                    <BarChart data={leadTimeData} layout="vertical" margin={{ left: 20, right: 30 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                       <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} label={{ value: 'Semanas', position: 'insideBottom', offset: -5, fill: '#64748b', fontSize: 11 }} />
                       <YAxis type="category" dataKey="name" width={180} tick={{ fill: '#94a3b8', fontSize: 10 }} />
                       <Tooltip content={<CustomTooltip />} />
                       <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
-                      <Bar dataKey="ltProgramado" name="LT Programado" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={14} />
+                      <Bar dataKey="ltProgramado" name="LT Programado" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={14}>
+                        <LabelList dataKey="ltProgramado" position="right" fill="#cbd5e1" fontSize={8} style={{ fontWeight: 'bold' }} />
+                      </Bar>
                       <Bar dataKey="ltRealizado" name="LT Realizado" radius={[0, 4, 4, 0]} barSize={14}>
+                        <LabelList dataKey="ltRealizado" position="right" fill="#cbd5e1" fontSize={8} style={{ fontWeight: 'bold' }} />
                         {leadTimeData.map((entry, i) => (
                           <Cell key={i} fill={entry.desvio > 0 ? '#ef4444' : '#10b981'} />
                         ))}
