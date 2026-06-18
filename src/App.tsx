@@ -113,9 +113,15 @@ export default function App() {
   const [clienteFilter, setClienteFilter] = useState('todos')
   const [etapaFilter, setEtapaFilter] = useState('todos')
 
-  // Lead time filters
-  const [ltGroupBy, setLtGroupBy] = useState<'cliente' | 'conjGeral' | 'equipamento'>('cliente')
-  const [ltClienteFilter, setLtClienteFilter] = useState('todos')
+  // Lead time drilldown states
+  const [selectedLtClient, setSelectedLtClient] = useState<string | null>(null)
+  const [selectedLtEquipment, setSelectedLtEquipment] = useState<string | null>(null)
+  const [ltClientSearch, setLtClientSearch] = useState('')
+
+  const handleSelectClient = (clientName: string) => {
+    setSelectedLtClient(clientName)
+    setSelectedLtEquipment(null) // Reset equipment selection when client changes
+  }
 
   // Local dynamic table states
   const [tblProj, setTblProj] = useState('todos')
@@ -349,32 +355,156 @@ export default function App() {
     return <FolderKanban className="h-5 w-5 text-indigo-400" />
   }, [statusFilter])
 
-  // --- Lead Time Calculation ---
-  const leadTimeData = useMemo(() => {
-    // Filter by client if selected
-    const ltFiltered = ltClienteFilter === 'todos'
-      ? data
-      : data.filter(d => d.cliente === ltClienteFilter)
-
-    // Group by the selected dimension
-    const groups: Record<string, PmpRecord[]> = {}
-    ltFiltered.forEach(d => {
-      let key = ''
-      if (ltGroupBy === 'cliente') key = d.cliente
-      else if (ltGroupBy === 'conjGeral') key = d.conjGeral
-      else key = d.equipamento
-      if (!key || key.trim() === '') return
-      if (!groups[key]) groups[key] = []
-      groups[key].push(d)
+  // --- Lead Time Calculations ---
+  
+  // 1. Group records by equipment and identify those 100% completed
+  const completedEquipments = useMemo(() => {
+    const groups: Record<string, { client: string; projeto: string; name: string; records: PmpRecord[] }> = {}
+    
+    data.forEach(r => {
+      const key = `${r.projeto}|||${r.equipamento}`
+      if (!groups[key]) {
+        groups[key] = {
+          client: r.cliente || 'Sem Cliente',
+          projeto: r.projeto,
+          name: r.equipamento || 'Sem Nome',
+          records: []
+        }
+      }
+      groups[key].records.push(r)
     })
 
-    // Calculate lead time for each group
-    const results: { name: string; ltProgramado: number; ltRealizado: number; desvio: number; count: number }[] = []
+    const results: Record<string, {
+      key: string;
+      client: string;
+      projeto: string;
+      name: string;
+      ltProgramado: number;
+      ltRealizado: number;
+      desvio: number;
+      records: PmpRecord[];
+    }> = {}
 
-    Object.entries(groups).forEach(([name, records]) => {
-      // Get numeric week values, accounting for year
-      const programadoWeeks: number[] = []
-      const realizadoWeeks: number[] = []
+    Object.entries(groups).forEach(([key, info]) => {
+      const total = info.records.length
+      const completed = info.records.filter(r => r.statusGeral === 'Concluído').length
+
+      // Equipment is 100% completed if all its records/stages are completed
+      if (total > 0 && total === completed) {
+        const progWeeks: number[] = []
+        const realWeeks: number[] = []
+
+        info.records.forEach(r => {
+          const anoAtual = parseInt(r.anoAtual) || 0
+          const anoReal = parseInt(r.anoReal) || 0
+          const prog = parseInt(r.programado) || 0
+          const real = parseInt(r.realizadoSemana) || 0
+
+          if (prog > 0 && anoAtual > 0) {
+            progWeeks.push(anoAtual * 52 + prog)
+          }
+          if (real > 0 && anoReal > 0) {
+            realWeeks.push(anoReal * 52 + real)
+          }
+        })
+
+        if (progWeeks.length > 0 && realWeeks.length > 0) {
+          const ltProg = Math.max(1, Math.max(...progWeeks) - Math.min(...progWeeks))
+          const ltReal = Math.max(1, Math.max(...realWeeks) - Math.min(...realWeeks))
+          results[key] = {
+            key,
+            client: info.client,
+            projeto: info.projeto,
+            name: info.name,
+            ltProgramado: ltProg,
+            ltRealizado: ltReal,
+            desvio: ltReal - ltProg,
+            records: info.records
+          }
+        }
+      }
+    })
+
+    return results
+  }, [])
+
+  // 2. Aggregate average lead times by client for their completed equipments
+  const ltClientsData = useMemo(() => {
+    const clientMap: Record<string, { name: string; totalLtProg: number; totalLtReal: number; count: number }> = {}
+
+    Object.values(completedEquipments).forEach(eq => {
+      const cli = eq.client
+      if (!clientMap[cli]) {
+        clientMap[cli] = {
+          name: cli,
+          totalLtProg: 0,
+          totalLtReal: 0,
+          count: 0
+        }
+      }
+      clientMap[cli].totalLtProg += eq.ltProgramado
+      clientMap[cli].totalLtReal += eq.ltRealizado
+      clientMap[cli].count++
+    })
+
+    const results = Object.values(clientMap).map(c => {
+      const avgProg = c.count > 0 ? parseFloat((c.totalLtProg / c.count).toFixed(1)) : 0
+      const avgReal = c.count > 0 ? parseFloat((c.totalLtReal / c.count).toFixed(1)) : 0
+      return {
+        name: c.name,
+        completedCount: c.count,
+        ltProgramado: avgProg,
+        ltRealizado: avgReal,
+        desvio: parseFloat((avgReal - avgProg).toFixed(1))
+      }
+    })
+
+    // Sort by number of completed equipments desc, then by client name
+    return results.sort((a, b) => b.completedCount - a.completedCount || a.name.localeCompare(b.name))
+  }, [completedEquipments])
+
+  // Filter clients list based on search term
+  const filteredLtClients = useMemo(() => {
+    if (!ltClientSearch) return ltClientsData
+    const query = ltClientSearch.toLowerCase()
+    return ltClientsData.filter(c => c.name.toLowerCase().includes(query))
+  }, [ltClientsData, ltClientSearch])
+
+  // 3. Get completed equipments for the selected client
+  const selectedClientEquipmentsLtData = useMemo(() => {
+    if (!selectedLtClient) return []
+    return Object.values(completedEquipments)
+      .filter(eq => eq.client === selectedLtClient)
+      .map(eq => ({
+        key: eq.key,
+        name: eq.name,
+        projeto: eq.projeto,
+        ltProgramado: eq.ltProgramado,
+        ltRealizado: eq.ltRealizado,
+        desvio: eq.desvio,
+        count: eq.records.length
+      }))
+      .sort((a, b) => b.ltRealizado - a.ltRealizado)
+  }, [completedEquipments, selectedLtClient])
+
+  // 4. Calculate stage-level lead times for the selected equipment
+  const selectedEquipmentStagesLtData = useMemo(() => {
+    if (!selectedLtEquipment || !completedEquipments[selectedLtEquipment]) return []
+    
+    const eq = completedEquipments[selectedLtEquipment]
+    const stageGroups: Record<string, PmpRecord[]> = {}
+
+    eq.records.forEach(r => {
+      const stage = normalizeEtapa(r.etapa)
+      if (!stageGroups[stage]) {
+        stageGroups[stage] = []
+      }
+      stageGroups[stage].push(r)
+    })
+
+    const results = Object.entries(stageGroups).map(([stageName, records]) => {
+      const progWeeks: number[] = []
+      const realWeeks: number[] = []
 
       records.forEach(r => {
         const anoAtual = parseInt(r.anoAtual) || 0
@@ -383,33 +513,29 @@ export default function App() {
         const real = parseInt(r.realizadoSemana) || 0
 
         if (prog > 0 && anoAtual > 0) {
-          programadoWeeks.push(anoAtual * 52 + prog)
+          progWeeks.push(anoAtual * 52 + prog)
         }
         if (real > 0 && anoReal > 0) {
-          realizadoWeeks.push(anoReal * 52 + real)
+          realWeeks.push(anoReal * 52 + real)
         }
       })
 
-      if (programadoWeeks.length >= 2 && realizadoWeeks.length >= 2) {
-        const ltProg = Math.max(...programadoWeeks) - Math.min(...programadoWeeks)
-        const ltReal = Math.max(...realizadoWeeks) - Math.min(...realizadoWeeks)
+      const ltProg = progWeeks.length > 0 ? Math.max(1, Math.max(...progWeeks) - Math.min(...progWeeks)) : 0
+      const ltReal = realWeeks.length > 0 ? Math.max(1, Math.max(...realWeeks) - Math.min(...realWeeks)) : 0
+      const minProg = progWeeks.length > 0 ? Math.min(...progWeeks) : Infinity
 
-        if (ltProg > 0 || ltReal > 0) {
-          results.push({
-            name: name.length > 30 ? name.substring(0, 27) + '...' : name,
-            ltProgramado: ltProg,
-            ltRealizado: ltReal,
-            desvio: ltReal - ltProg,
-            count: records.length
-          })
-        }
+      return {
+        name: stageName,
+        ltProgramado: ltProg,
+        ltRealizado: ltReal,
+        desvio: ltReal - ltProg,
+        minProg
       }
     })
 
-    return results
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 15)
-  }, [ltGroupBy, ltClienteFilter])
+    // Sort chronologically by the minimum programmed week
+    return results.sort((a, b) => a.minProg - b.minProg)
+  }, [completedEquipments, selectedLtEquipment])
 
   // Custom Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -810,99 +936,291 @@ export default function App() {
             <>
               <div>
                 <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-blue-400" /> Lead Time — Programado vs Realizado
+                  <Clock className="h-5 w-5 text-blue-400" /> Lead Time — Análise de Equipamentos Concluídos
                 </h2>
                 <p className="text-slate-400 text-sm mt-0.5">
-                  Comparação do lead time planejado contra o realizado (em semanas). 
-                  Cálculo: (semana da última etapa) − (semana da primeira etapa) por agrupamento.
+                  Acompanhe o lead time médio dos clientes calculado exclusivamente a partir de equipamentos 100% concluídos na fábrica.
                 </p>
               </div>
 
-              {/* Lead time controls */}
-              <div className="flex flex-wrap gap-3 items-center">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <Filter className="h-4 w-4" /> Controles:
-                </div>
-                <select value={ltGroupBy} onChange={e => setLtGroupBy(e.target.value as any)} className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
-                  <option value="cliente">Agrupar por: Cliente</option>
-                  <option value="conjGeral">Agrupar por: Conjunto Geral</option>
-                  <option value="equipamento">Agrupar por: Equipamento</option>
-                </select>
-                <select value={ltClienteFilter} onChange={e => setLtClienteFilter(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
-                  <option value="todos">Cliente: Todos</option>
-                  {uniqueClientes.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              {/* Lead Time Chart */}
-              <ChartCard title={`Lead Time por ${ltGroupBy === 'cliente' ? 'Cliente' : ltGroupBy === 'conjGeral' ? 'Conjunto Geral' : 'Equipamento'} (semanas)`}>
-                {leadTimeData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={Math.max(300, leadTimeData.length * 40)}>
-                    <BarChart data={leadTimeData} layout="vertical" margin={{ left: 20, right: 30 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} label={{ value: 'Semanas', position: 'insideBottom', offset: -5, fill: '#64748b', fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={180} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
-                      <Bar dataKey="ltProgramado" name="LT Programado" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={14}>
-                        <LabelList dataKey="ltProgramado" position="right" fill="#cbd5e1" fontSize={8} style={{ fontWeight: 'bold' }} />
-                      </Bar>
-                      <Bar dataKey="ltRealizado" name="LT Realizado" radius={[0, 4, 4, 0]} barSize={14}>
-                        <LabelList dataKey="ltRealizado" position="right" fill="#cbd5e1" fontSize={8} style={{ fontWeight: 'bold' }} />
-                        {leadTimeData.map((entry, i) => (
-                          <Cell key={i} fill={entry.desvio > 0 ? '#ef4444' : '#10b981'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="text-center py-16 text-slate-500 text-sm">
-                    Sem dados suficientes para calcular o lead time com os filtros atuais.
+              {/* Grid of Clients (Left) and Equipments Chart (Right) */}
+              <div className="grid gap-6 lg:grid-cols-12 items-start">
+                
+                {/* Left Column: Clients List */}
+                <div className="lg:col-span-5 bg-[#12141c] border border-slate-800/80 rounded-2xl p-5 flex flex-col h-[520px]">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      Clientes com Equip. Concluídos ({filteredLtClients.length})
+                    </h3>
                   </div>
-                )}
-              </ChartCard>
+                  
+                  {/* Search box for clients */}
+                  <div className="relative mb-3.5">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Filtrar cliente pelo nome..."
+                      value={ltClientSearch}
+                      onChange={e => setLtClientSearch(e.target.value)}
+                      className="w-full bg-slate-800/40 border border-slate-700/50 rounded-xl py-1.5 pl-9 pr-4 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/80 focus:ring-1 focus:ring-indigo-500/80 transition-all"
+                    />
+                  </div>
 
-              {/* Lead Time Table */}
-              {leadTimeData.length > 0 && (
-                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6">
-                  <h3 className="text-base font-bold text-white mb-4">Detalhamento do Lead Time</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
+                  {/* Scrollable Clients Table */}
+                  <div className="flex-1 overflow-y-auto pr-1 text-[11px]">
+                    <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider">
-                          <th className="py-3 px-3 text-left font-semibold">
-                            {ltGroupBy === 'cliente' ? 'Cliente' : ltGroupBy === 'conjGeral' ? 'Conjunto Geral' : 'Equipamento'}
-                          </th>
-                          <th className="py-3 px-3 text-center font-semibold">LT Programado (sem)</th>
-                          <th className="py-3 px-3 text-center font-semibold">LT Realizado (sem)</th>
-                          <th className="py-3 px-3 text-center font-semibold">Desvio (sem)</th>
-                          <th className="py-3 px-3 text-center font-semibold">Kits</th>
+                        <tr className="border-b border-slate-800 text-slate-500 uppercase tracking-wider font-semibold">
+                          <th className="py-2 px-2">Cliente</th>
+                          <th className="py-2 px-2 text-center">Equip.</th>
+                          <th className="py-2 px-2 text-center">Prog.</th>
+                          <th className="py-2 px-2 text-center">Real.</th>
+                          <th className="py-2 px-2 text-center">Desvio</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {leadTimeData.map((item, i) => (
-                          <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                            <td className="py-2.5 px-3 font-medium text-slate-200">{item.name}</td>
-                            <td className="py-2.5 px-3 text-center text-blue-400 font-semibold">{item.ltProgramado}</td>
-                            <td className="py-2.5 px-3 text-center font-semibold" style={{ color: item.desvio > 0 ? '#ef4444' : '#10b981' }}>
-                              {item.ltRealizado}
+                        {filteredLtClients.length > 0 ? (
+                          filteredLtClients.map((c, i) => {
+                            const isSelected = selectedLtClient === c.name
+                            return (
+                              <tr
+                                key={i}
+                                onClick={() => handleSelectClient(c.name)}
+                                className={`border-b border-slate-800/30 hover:bg-slate-800/30 transition-all cursor-pointer ${
+                                  isSelected ? 'bg-indigo-600/10 hover:bg-indigo-600/15 border-l-2 border-l-indigo-500 pl-1.5' : ''
+                                }`}
+                              >
+                                <td className="py-2.5 px-2 font-medium text-slate-200 max-w-[120px] truncate" title={c.name}>
+                                  {c.name}
+                                </td>
+                                <td className="py-2.5 px-2 text-center text-slate-400 font-bold">{c.completedCount}</td>
+                                <td className="py-2.5 px-2 text-center text-blue-400 font-semibold">{c.ltProgramado}s</td>
+                                <td className="py-2.5 px-2 text-center text-slate-300 font-semibold">{c.ltRealizado}s</td>
+                                <td className="py-2.5 px-2 text-center">
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                    c.desvio > 0 ? 'bg-red-500/10 text-red-400' :
+                                    c.desvio < 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/30 text-slate-400'
+                                  }`}>
+                                    {c.desvio > 0 ? `+${c.desvio}` : c.desvio}
+                                  </span>
+                                </td>
+                              </tr>
+                            )
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-slate-500">
+                              Nenhum cliente encontrado.
                             </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                                item.desvio > 0 ? 'bg-red-500/10 text-red-400' :
-                                item.desvio < 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/30 text-slate-400'
-                              }`}>
-                                {item.desvio > 0 ? '+' : ''}{item.desvio}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center text-slate-400">{item.count}</td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>
                 </div>
-              )}
+
+                {/* Right Column: Equipments Comparison Chart */}
+                <div className="lg:col-span-7 bg-[#12141c] border border-slate-800/80 rounded-2xl p-5 h-[520px] flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white mb-1">
+                      {selectedLtClient 
+                        ? `Equipamentos Concluídos — ${selectedLtClient}`
+                        : 'Lead Time dos Equipamentos'
+                      }
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      {selectedLtClient 
+                        ? 'Clique em um equipamento para visualizar o detalhamento das etapas produtivas abaixo.' 
+                        : 'Selecione um cliente à esquerda para carregar seus equipamentos concluídos.'
+                      }
+                    </p>
+                  </div>
+
+                  {selectedLtClient ? (
+                    selectedClientEquipmentsLtData.length > 0 ? (
+                      <div className="flex-1 overflow-y-auto mt-4 pr-1">
+                        <ResponsiveContainer width="100%" height={Math.max(300, selectedClientEquipmentsLtData.length * 45)}>
+                          <BarChart
+                            data={selectedClientEquipmentsLtData}
+                            layout="vertical"
+                            margin={{ left: 10, right: 20, top: 5, bottom: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                            <XAxis type="number" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Semanas', position: 'insideBottom', offset: -5, fill: '#64748b', fontSize: 10 }} />
+                            <YAxis
+                              type="category"
+                              dataKey="name"
+                              width={140}
+                              stroke="#94a3b8"
+                              tickFormatter={(val) => val.length > 18 ? val.substring(0, 15) + '...' : val}
+                              tick={{ fill: '#cbd5e1', fontSize: 9, fontWeight: 'medium' }}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 5 }} />
+                            <Bar
+                              dataKey="ltProgramado"
+                              name="Programado"
+                              fill="#6366f1"
+                              radius={[0, 4, 4, 0]}
+                              barSize={12}
+                              onClick={(entry) => {
+                                if (entry && entry.key) {
+                                  setSelectedLtEquipment(String(entry.key))
+                                }
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <LabelList dataKey="ltProgramado" position="right" fill="#cbd5e1" fontSize={8} style={{ fontWeight: 'bold' }} />
+                            </Bar>
+                            <Bar
+                              dataKey="ltRealizado"
+                              name="Realizado"
+                              radius={[0, 4, 4, 0]}
+                              barSize={12}
+                              onClick={(entry) => {
+                                if (entry && entry.key) {
+                                  setSelectedLtEquipment(String(entry.key))
+                                }
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <LabelList dataKey="ltRealizado" position="right" fill="#cbd5e1" fontSize={8} style={{ fontWeight: 'bold' }} />
+                              {selectedClientEquipmentsLtData.map((entry, idx) => (
+                                <Cell
+                                  key={idx}
+                                  fill={entry.desvio > 0 ? '#ef4444' : '#10b981'}
+                                  stroke={selectedLtEquipment === entry.key ? '#ffffff' : undefined}
+                                  strokeWidth={selectedLtEquipment === entry.key ? 2 : undefined}
+                                />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                        <Clock className="h-10 w-10 text-slate-600 mb-2" />
+                        <p className="text-xs">Nenhum equipamento com lead time válido encontrado para este cliente.</p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-slate-800/80 rounded-2xl bg-slate-900/10">
+                      <div className="h-12 w-12 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-3 animate-pulse">
+                        <Filter className="h-5 w-5" />
+                      </div>
+                      <p className="text-sm font-bold text-slate-300">Aguardando Seleção de Cliente</p>
+                      <p className="text-xs text-slate-500 max-w-sm mt-1">Selecione um cliente na lista à esquerda para carregar seus equipamentos e comparar os lead times planejados e realizados.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bottom Row: Stage-level detail chart */}
+              <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-5">
+                <div>
+                  <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                    {selectedLtEquipment ? (
+                      <>
+                        <Layers className="h-4 w-4 text-indigo-400" />
+                        Detalhamento por Etapa — {completedEquipments[selectedLtEquipment]?.name} (Proj. {completedEquipments[selectedLtEquipment]?.projeto})
+                      </>
+                    ) : (
+                      'Detalhamento do Processo por Etapa'
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {selectedLtEquipment 
+                      ? 'Veja a duração (em semanas) planejada vs realizada de cada etapa de produção deste equipamento, organizada na sequência cronológica.' 
+                      : 'Clique em um equipamento no gráfico superior para visualizar a duração das etapas individuais de fabricação.'
+                    }
+                  </p>
+                </div>
+
+                {selectedLtEquipment ? (
+                  selectedEquipmentStagesLtData.length > 0 ? (
+                    <div className="mt-6 space-y-6">
+                      <ResponsiveContainer width="100%" height={280}>
+                        <BarChart
+                          data={selectedEquipmentStagesLtData}
+                          margin={{ left: -10, right: 10, top: 15, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                          <XAxis
+                            dataKey="name"
+                            stroke="#94a3b8"
+                            tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 'medium' }}
+                            angle={-20}
+                            textAnchor="end"
+                            height={50}
+                          />
+                          <YAxis
+                            stroke="#94a3b8"
+                            tick={{ fill: '#94a3b8', fontSize: 10 }}
+                            label={{ value: 'Semanas', angle: -90, position: 'insideLeft', fill: '#94a3b8', style: { textAnchor: 'middle' }, offset: 5 }}
+                          />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
+                          <Bar dataKey="ltProgramado" name="Programado" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={20}>
+                            <LabelList dataKey="ltProgramado" position="top" fill="#cbd5e1" fontSize={8} style={{ fontWeight: 'bold' }} />
+                          </Bar>
+                          <Bar dataKey="ltRealizado" name="Realizado" radius={[4, 4, 0, 0]} barSize={20}>
+                            <LabelList dataKey="ltRealizado" position="top" fill="#cbd5e1" fontSize={8} style={{ fontWeight: 'bold' }} />
+                            {selectedEquipmentStagesLtData.map((entry, idx) => (
+                              <Cell key={idx} fill={entry.desvio > 0 ? '#ef4444' : '#10b981'} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+
+                      {/* Mini-table detailing stages */}
+                      <div className="overflow-x-auto border border-slate-800/80 rounded-xl bg-slate-900/10">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[10px] font-semibold">
+                              <th className="py-2.5 px-4">Etapa Produtiva</th>
+                              <th className="py-2.5 px-4 text-center">LT Programado (sem)</th>
+                              <th className="py-2.5 px-4 text-center">LT Realizado (sem)</th>
+                              <th className="py-2.5 px-4 text-center">Desvio (sem)</th>
+                              <th className="py-2.5 px-4 text-center">Ordem Cronológica</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedEquipmentStagesLtData.map((item, idx) => (
+                              <tr key={idx} className="border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors">
+                                <td className="py-2 px-4 font-medium text-slate-300">{item.name}</td>
+                                <td className="py-2 px-4 text-center text-blue-400 font-semibold">{item.ltProgramado}</td>
+                                <td className="py-2 px-4 text-center font-semibold" style={{ color: item.desvio > 0 ? '#ef4444' : '#10b981' }}>
+                                  {item.ltRealizado}
+                                </td>
+                                <td className="py-2 px-4 text-center">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    item.desvio > 0 ? 'bg-red-500/10 text-red-400' :
+                                    item.desvio < 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/30 text-slate-400'
+                                  }`}>
+                                    {item.desvio > 0 ? `+${item.desvio}` : item.desvio}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-4 text-center text-slate-500">
+                                  {idx + 1}ª etapa (início programado na semana {item.minProg !== Infinity ? (item.minProg % 52 === 0 ? 52 : item.minProg % 52) : '-'})
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex h-32 items-center justify-center text-xs text-slate-500">
+                      Sem dados de etapas disponíveis para este equipamento.
+                    </div>
+                  )
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-center p-8 border border-dashed border-slate-800 rounded-xl bg-slate-900/10 mt-4">
+                    <Clock className="h-8 w-8 text-slate-700 mb-2 animate-pulse" />
+                    <p className="text-xs text-slate-500">Nenhum equipamento selecionado. Clique em uma barra de equipamento acima para carregar suas etapas produtivas.</p>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </main>
