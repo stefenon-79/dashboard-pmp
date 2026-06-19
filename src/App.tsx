@@ -177,12 +177,10 @@ export default function App() {
   const [complianceEndWeek, setComplianceEndWeek] = useState<number | null>(null)
   const [complianceMeta, setComplianceMeta] = useState<number>(85)
   const [complianceSelectedEtapas, setComplianceSelectedEtapas] = useState<string[]>([])
-  const [complianceClienteFilter, setComplianceClienteFilter] = useState<string>('todos')
   const [etapaDropdownOpen, setEtapaDropdownOpen] = useState(false)
 
   // Occupancy (Ocupação) states
   const [occupancySelectedEtapas, setOccupancySelectedEtapas] = useState<string[]>([])
-  const [occupancyClienteFilter, setOccupancyClienteFilter] = useState<string>('todos')
   const [occupancyDropdownOpen, setOccupancyDropdownOpen] = useState(false)
 
   // Local dynamic table states
@@ -829,11 +827,10 @@ export default function App() {
       visibleWeeks.push(startWeek + i)
     }
 
-    // 2. Filter records based on selected client and stages
+    // 2. Filter records based on selected stages
     const filteredRecords = data.filter(r => {
-      const matchClient = complianceClienteFilter === 'todos' || r.cliente === complianceClienteFilter
       const matchStage = complianceSelectedEtapas.includes(normalizeEtapa(r.etapa))
-      return matchClient && matchStage
+      return matchStage
     })
 
     // 3. For each week, calculate compliance percentage
@@ -861,7 +858,7 @@ export default function App() {
         totalConcluidos: completed
       }
     })
-  }, [complianceStartWeek, complianceEndWeek, complianceSelectedEtapas, complianceClienteFilter, globalWeekRange])
+  }, [complianceStartWeek, complianceEndWeek, complianceSelectedEtapas, globalWeekRange])
 
   const complianceGradientOffset = useMemo(() => {
     const values = complianceChartData
@@ -889,9 +886,7 @@ export default function App() {
       visibleWeeks.push(startWeek + i)
     }
 
-    const clientFilteredRecords = data.filter(r => {
-      return complianceClienteFilter === 'todos' || r.cliente === complianceClienteFilter
-    })
+    const clientFilteredRecords = data
 
     return complianceSelectedEtapas.map(etapa => {
       const stageRecords = clientFilteredRecords.filter(r => normalizeEtapa(r.etapa) === etapa)
@@ -919,12 +914,36 @@ export default function App() {
         weeklyCompliance
       }
     })
-  }, [complianceStartWeek, complianceEndWeek, complianceSelectedEtapas, complianceClienteFilter, globalWeekRange])
+  }, [complianceStartWeek, complianceEndWeek, complianceSelectedEtapas, globalWeekRange])
+
+  // --- Week-to-Month Map based on database records ---
+  const weekToMonthMap = useMemo(() => {
+    const map = new Map<number, string>()
+    data.forEach(r => {
+      const anoAtual = parseInt(r.anoAtual) || 0
+      const prog = parseInt(r.programado) || 0
+      const mes = r.mesProg ? r.mesProg.trim() : ''
+      if (anoAtual > 0 && prog > 0 && mes !== '') {
+        const absWeek = anoAtual * 52 + prog
+        map.set(absWeek, mes)
+      }
+    })
+    return map
+  }, [])
+
+  const getMonthNameFromAbsWeek = useMemo(() => {
+    return (absWeek: number): string => {
+      const mapped = weekToMonthMap.get(absWeek)
+      if (mapped) return mapped
+      const num = absWeek % 52
+      const monthIndex = Math.min(11, Math.floor((num === 0 ? 51 : num - 1) / 4.33))
+      const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+      return MONTHS[monthIndex]
+    }
+  }, [weekToMonthMap])
 
   const occupancyChartData = useMemo(() => {
-    const clientRecords = data.filter(r => {
-      return occupancyClienteFilter === 'todos' || r.cliente === occupancyClienteFilter
-    })
+    const clientRecords = data
 
     const stageMap = new Map<string, { minProg: number; maxProg: number }>()
 
@@ -972,7 +991,31 @@ export default function App() {
     })
 
     return result.sort((a, b) => a.minProg - b.minProg || a.etapa.localeCompare(b.etapa))
-  }, [occupancyClienteFilter, occupancySelectedEtapas])
+  }, [occupancySelectedEtapas])
+
+  const occupancyMonthTicks = useMemo(() => {
+    if (occupancyChartData.length === 0) return []
+    const minAbs = Math.min(...occupancyChartData.map(d => d.minProg))
+    const maxAbs = Math.max(...occupancyChartData.map(d => d.maxProg))
+    
+    const groups: Record<string, number[]> = {}
+    for (let w = minAbs; w <= maxAbs; w++) {
+      const monthName = getMonthNameFromAbsWeek(w)
+      const year = Math.floor((w - 1) / 52)
+      const label = `${monthName} ('${String(year).substring(2)})`
+      if (!groups[label]) groups[label] = []
+      groups[label].push(w)
+    }
+    
+    return Object.entries(groups).map(([label, weeks]) => {
+      const sum = weeks.reduce((a, b) => a + b, 0)
+      const avg = sum / weeks.length
+      return {
+        value: avg,
+        label
+      }
+    })
+  }, [occupancyChartData, getMonthNameFromAbsWeek])
 
   // Compliance Custom Helpers
   const CustomDot = (props: any) => {
@@ -1987,23 +2030,8 @@ export default function App() {
               {/* Filters Panel */}
               <div className="grid gap-4 md:grid-cols-12 items-center bg-[#12141c] border border-slate-800/80 rounded-2xl p-5 relative">
                 
-                {/* Client filter */}
-                <div className="md:col-span-3 flex flex-col gap-1.5">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Cliente</label>
-                  <select
-                    value={complianceClienteFilter}
-                    onChange={e => setComplianceClienteFilter(e.target.value)}
-                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
-                  >
-                    <option value="todos">Todos os Clientes</option>
-                    {uniqueClientes.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-
                 {/* Custom Multi-Select Dropdown for Stages */}
-                <div className="relative md:col-span-3 flex flex-col gap-1.5">
+                <div className="relative md:col-span-4 flex flex-col gap-1.5">
                   <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Etapas Produtivas</label>
                   <button
                     onClick={() => setEtapaDropdownOpen(!etapaDropdownOpen)}
@@ -2070,7 +2098,7 @@ export default function App() {
                 </div>
 
                 {/* Start Week dropdown */}
-                <div className="md:col-span-2 flex flex-col gap-1.5">
+                <div className="md:col-span-3 flex flex-col gap-1.5">
                   <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Semana Início</label>
                   <select
                     value={complianceStartWeek !== null ? complianceStartWeek : ''}
@@ -2084,7 +2112,7 @@ export default function App() {
                 </div>
 
                 {/* End Week dropdown */}
-                <div className="md:col-span-2 flex flex-col gap-1.5">
+                <div className="md:col-span-3 flex flex-col gap-1.5">
                   <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Semana Fim</label>
                   <select
                     value={complianceEndWeek !== null ? complianceEndWeek : ''}
@@ -2281,21 +2309,6 @@ export default function App() {
               {/* Filters Panel */}
               <div className="grid gap-4 md:grid-cols-12 items-center bg-[#12141c] border border-slate-800/80 rounded-2xl p-5 relative">
                 
-                {/* Client filter */}
-                <div className="md:col-span-4 flex flex-col gap-1.5">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Cliente</label>
-                  <select
-                    value={occupancyClienteFilter}
-                    onChange={e => setOccupancyClienteFilter(e.target.value)}
-                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
-                  >
-                    <option value="todos">Todos os Clientes</option>
-                    {uniqueClientes.map(cli => (
-                      <option key={cli} value={cli}>{cli}</option>
-                    ))}
-                  </select>
-                </div>
-
                 {/* Custom Multi-Select Dropdown for Stages */}
                 <div className="relative md:col-span-4 flex flex-col gap-1.5">
                   <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Etapas</label>
@@ -2377,7 +2390,7 @@ export default function App() {
                       <BarChart
                         data={occupancyChartData}
                         layout="vertical"
-                        margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
+                        margin={{ top: 30, right: 30, left: 100, bottom: 20 }}
                       >
                         <defs>
                           <linearGradient id="occupancyBarGradient" x1="0" y1="0" x2="1" y2="0">
@@ -2385,19 +2398,40 @@ export default function App() {
                             <stop offset="100%" stopColor="#10b981" />
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+                        <CartesianGrid xAxisId="weeks" strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+                        
+                        {/* Primary XAxis: Weeks (at the bottom) */}
                         <XAxis
+                          xAxisId="weeks"
                           type="number"
                           domain={['dataMin - 1', 'dataMax + 1']}
                           tickFormatter={tickVal => {
-                            const year = Math.floor((tickVal - 1) / 52)
                             let num = tickVal % 52
                             if (num === 0) num = 52
-                            return `S${num} ('${String(year).substring(2)})`
+                            return `S${num}`
                           }}
                           stroke="#94a3b8"
                           tick={{ fill: '#94a3b8', fontSize: 10 }}
+                          orientation="bottom"
                         />
+
+                        {/* Secondary XAxis: Months (at the top, grouped and centered) */}
+                        <XAxis
+                          xAxisId="months"
+                          type="number"
+                          domain={['dataMin - 1', 'dataMax + 1']}
+                          orientation="top"
+                          ticks={occupancyMonthTicks.map(t => t.value)}
+                          tickFormatter={val => {
+                            const matched = occupancyMonthTicks.find(t => Math.abs(t.value - val) < 0.01)
+                            return matched ? matched.label : ''
+                          }}
+                          stroke="#475569"
+                          tick={{ fill: '#a5b4fc', fontSize: 10, fontWeight: 'bold' }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+
                         <YAxis
                           type="category"
                           dataKey="etapa"
@@ -2425,6 +2459,7 @@ export default function App() {
                           }}
                         />
                         <Bar
+                          xAxisId="weeks"
                           dataKey="range"
                           fill="url(#occupancyBarGradient)"
                           radius={[6, 6, 6, 6]}
@@ -2436,7 +2471,7 @@ export default function App() {
                 ) : (
                   <div className="flex flex-col items-center justify-center text-center p-16 text-slate-500">
                     <Clock className="h-10 w-10 text-slate-700 mb-2" />
-                    <p className="text-xs">Nenhum dado de programação disponível para o cliente ou etapas selecionadas.</p>
+                    <p className="text-xs">Nenhum dado de programação disponível ou etapas selecionadas.</p>
                   </div>
                 )}
               </div>
