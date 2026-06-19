@@ -84,7 +84,7 @@ function normalizeEtapa(etapa: string): string {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'leadtime' | 'gantt' | 'compliance'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'leadtime' | 'gantt' | 'compliance' | 'occupancy'>('overview')
   const [searchQuery, setSearchQuery] = useState('')
 
   // Status to handle sheet update process
@@ -179,6 +179,11 @@ export default function App() {
   const [complianceSelectedEtapas, setComplianceSelectedEtapas] = useState<string[]>([])
   const [complianceClienteFilter, setComplianceClienteFilter] = useState<string>('todos')
   const [etapaDropdownOpen, setEtapaDropdownOpen] = useState(false)
+
+  // Occupancy (Ocupação) states
+  const [occupancySelectedEtapas, setOccupancySelectedEtapas] = useState<string[]>([])
+  const [occupancyClienteFilter, setOccupancyClienteFilter] = useState<string>('todos')
+  const [occupancyDropdownOpen, setOccupancyDropdownOpen] = useState(false)
 
   // Local dynamic table states
   const [tblProj, setTblProj] = useState('todos')
@@ -804,6 +809,12 @@ export default function App() {
     }
   }, [uniqueEtapas])
 
+  useEffect(() => {
+    if (uniqueEtapas.length > 0 && occupancySelectedEtapas.length === 0) {
+      setOccupancySelectedEtapas(uniqueEtapas)
+    }
+  }, [uniqueEtapas])
+
   // --- Compliance (Atendimento ao Plano) Calculations ---
   const complianceChartData = useMemo(() => {
     const startWeek = complianceStartWeek !== null ? complianceStartWeek : globalWeekRange.minWeek
@@ -910,6 +921,59 @@ export default function App() {
     })
   }, [complianceStartWeek, complianceEndWeek, complianceSelectedEtapas, complianceClienteFilter, globalWeekRange])
 
+  const occupancyChartData = useMemo(() => {
+    const clientRecords = data.filter(r => {
+      return occupancyClienteFilter === 'todos' || r.cliente === occupancyClienteFilter
+    })
+
+    const stageMap = new Map<string, { minProg: number; maxProg: number }>()
+
+    clientRecords.forEach(r => {
+      const stageName = normalizeEtapa(r.etapa)
+      if (stageName === 'Outros') return
+
+      const anoAtual = parseInt(r.anoAtual) || 0
+      const prog = parseInt(r.programado) || 0
+      if (anoAtual > 0 && prog > 0) {
+        const absWeek = anoAtual * 52 + prog
+        const current = stageMap.get(stageName)
+        if (!current) {
+          stageMap.set(stageName, { minProg: absWeek, maxProg: absWeek })
+        } else {
+          stageMap.set(stageName, {
+            minProg: Math.min(current.minProg, absWeek),
+            maxProg: Math.max(current.maxProg, absWeek)
+          })
+        }
+      }
+    })
+
+    const result: any[] = []
+    stageMap.forEach((val, etapa) => {
+      if (occupancySelectedEtapas.includes(etapa)) {
+        const minYear = Math.floor((val.minProg - 1) / 52)
+        let minNum = val.minProg % 52
+        if (minNum === 0) minNum = 52
+
+        const maxYear = Math.floor((val.maxProg - 1) / 52)
+        let maxNum = val.maxProg % 52
+        if (maxNum === 0) maxNum = 52
+
+        result.push({
+          etapa,
+          range: [val.minProg, val.maxProg],
+          minProg: val.minProg,
+          maxProg: val.maxProg,
+          semanaInicioLabel: `S${minNum} ('${String(minYear).substring(2)})`,
+          semanaFimLabel: `S${maxNum} ('${String(maxYear).substring(2)})`,
+          duracao: val.maxProg - val.minProg + 1
+        })
+      }
+    })
+
+    return result.sort((a, b) => a.minProg - b.minProg || a.etapa.localeCompare(b.etapa))
+  }, [occupancyClienteFilter, occupancySelectedEtapas])
+
   // Compliance Custom Helpers
   const CustomDot = (props: any) => {
     const { cx, cy, value } = props
@@ -979,6 +1043,7 @@ export default function App() {
     { id: 'leadtime', label: 'Lead Time', icon: Timer },
     { id: 'gantt', label: 'Cronograma', icon: Calendar },
     { id: 'compliance', label: 'Atendimento ao Plano', icon: CheckCircle2 },
+    { id: 'occupancy', label: 'Ocupação', icon: Layers },
   ]
 
   return (
@@ -2197,6 +2262,184 @@ export default function App() {
                   </div>
                 </div>
               )}
+            </>
+          )}
+
+          {/* ================== OCCUPANCY (OCUPAÇÃO) TAB ================== */}
+          {activeTab === 'occupancy' && (
+            <>
+              {/* Title & Description */}
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-indigo-400" /> Ocupação das Etapas Produtivas
+                </h2>
+                <p className="text-slate-400 text-sm mt-0.5">
+                  Visualização da janela de programação temporal de cada etapa produtiva, mostrando o início e o fim planejado das atividades.
+                </p>
+              </div>
+
+              {/* Filters Panel */}
+              <div className="grid gap-4 md:grid-cols-12 items-center bg-[#12141c] border border-slate-800/80 rounded-2xl p-5 relative">
+                
+                {/* Client filter */}
+                <div className="md:col-span-4 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Cliente</label>
+                  <select
+                    value={occupancyClienteFilter}
+                    onChange={e => setOccupancyClienteFilter(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full"
+                  >
+                    <option value="todos">Todos os Clientes</option>
+                    {uniqueClientes.map(cli => (
+                      <option key={cli} value={cli}>{cli}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Custom Multi-Select Dropdown for Stages */}
+                <div className="relative md:col-span-4 flex flex-col gap-1.5">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Etapas</label>
+                  <button
+                    onClick={() => setOccupancyDropdownOpen(!occupancyDropdownOpen)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg py-1.5 px-3 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer w-full text-left flex items-center justify-between"
+                  >
+                    <span className="truncate">
+                      {occupancySelectedEtapas.length === uniqueEtapas.length
+                        ? 'Todas as etapas selecionadas'
+                        : occupancySelectedEtapas.length === 0
+                        ? 'Nenhuma etapa selecionada'
+                        : `${occupancySelectedEtapas.length} de ${uniqueEtapas.length} selecionadas`
+                      }
+                    </span>
+                    <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+                  </button>
+                  
+                  {occupancyDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setOccupancyDropdownOpen(false)}></div>
+                      <div className="absolute top-[55px] left-0 w-full bg-[#1a1d28] border border-slate-700/80 rounded-xl shadow-2xl p-3 z-40 max-h-[260px] overflow-y-auto flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-[10px] font-bold text-slate-400">
+                          <button
+                            onClick={() => setOccupancySelectedEtapas(uniqueEtapas)}
+                            className="text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                          >
+                            Selecionar Todas
+                          </button>
+                          <button
+                            onClick={() => setOccupancySelectedEtapas([])}
+                            className="text-red-400 hover:text-red-300 cursor-pointer"
+                          >
+                            Limpar Seleção
+                          </button>
+                        </div>
+                        
+                        <div className="flex flex-col gap-2">
+                          {uniqueEtapas.map(etapa => {
+                            const isChecked = occupancySelectedEtapas.includes(etapa)
+                            return (
+                              <label key={etapa} className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer hover:text-white select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    if (isChecked) {
+                                      setOccupancySelectedEtapas(occupancySelectedEtapas.filter(e => e !== etapa))
+                                    } else {
+                                      setOccupancySelectedEtapas([...occupancySelectedEtapas, etapa])
+                                    }
+                                  }}
+                                  className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-800 h-3.5 w-3.5"
+                                />
+                                <span>{etapa}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Horizontal Bar Chart Panel */}
+              <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white">Cronograma de Janela de Atividade por Etapa</h3>
+                  <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                    {occupancyChartData.length} etapas sendo exibidas
+                  </div>
+                </div>
+
+                {occupancyChartData.length > 0 ? (
+                  <div className="w-full mt-4" style={{ height: `${Math.max(250, occupancyChartData.length * 40 + 80)}px` }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={occupancyChartData}
+                        layout="vertical"
+                        margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
+                      >
+                        <defs>
+                          <linearGradient id="occupancyBarGradient" x1="0" y1="0" x2="1" y2="0">
+                            <stop offset="0%" stopColor="#6366f1" />
+                            <stop offset="100%" stopColor="#10b981" />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+                        <XAxis
+                          type="number"
+                          domain={['dataMin - 1', 'dataMax + 1']}
+                          tickFormatter={tickVal => {
+                            const year = Math.floor((tickVal - 1) / 52)
+                            let num = tickVal % 52
+                            if (num === 0) num = 52
+                            return `S${num} ('${String(year).substring(2)})`
+                          }}
+                          stroke="#94a3b8"
+                          tick={{ fill: '#94a3b8', fontSize: 10 }}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="etapa"
+                          stroke="#94a3b8"
+                          tick={{ fill: '#ffffff', fontSize: 11, fontWeight: 'bold' }}
+                          width={100}
+                        />
+                        <Tooltip
+                          cursor={{ fill: 'rgba(255, 255, 255, 0.03)' }}
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const d = payload[0].payload
+                              return (
+                                <div className="bg-[#1a1c28] border border-slate-700 rounded-xl p-3 shadow-xl text-xs">
+                                  <p className="font-bold text-white mb-2">{d.etapa}</p>
+                                  <div className="space-y-1 text-slate-300 font-semibold">
+                                    <p>Início Planejado: <span className="text-indigo-400">{d.semanaInicioLabel}</span></p>
+                                    <p>Término Planejado: <span className="text-emerald-400">{d.semanaFimLabel}</span></p>
+                                    <p>Janela de Ocupação: <span className="text-amber-400">{d.duracao} {d.duracao === 1 ? 'semana' : 'semanas'}</span></p>
+                                  </div>
+                                </div>
+                              )
+                            }
+                            return null
+                          }}
+                        />
+                        <Bar
+                          dataKey="range"
+                          fill="url(#occupancyBarGradient)"
+                          radius={[6, 6, 6, 6]}
+                          barSize={18}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-center p-16 text-slate-500">
+                    <Clock className="h-10 w-10 text-slate-700 mb-2" />
+                    <p className="text-xs">Nenhum dado de programação disponível para o cliente ou etapas selecionadas.</p>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </main>
