@@ -1017,6 +1017,13 @@ export default function App() {
     })
   }, [occupancyChartData, getMonthNameFromAbsWeek])
 
+  const occupancyDomain = useMemo(() => {
+    if (occupancyChartData.length === 0) return [0, 0]
+    const minAbs = Math.min(...occupancyChartData.map(d => d.minProg))
+    const maxAbs = Math.max(...occupancyChartData.map(d => d.maxProg))
+    return [minAbs - 1, maxAbs + 1]
+  }, [occupancyChartData])
+
   // Compliance Custom Helpers
   const CustomDot = (props: any) => {
     const { cx, cy, value } = props
@@ -2404,7 +2411,7 @@ export default function App() {
                         <XAxis
                           xAxisId="weeks"
                           type="number"
-                          domain={['dataMin - 1', 'dataMax + 1']}
+                          domain={occupancyDomain}
                           tickFormatter={tickVal => {
                             let num = tickVal % 52
                             if (num === 0) num = 52
@@ -2419,17 +2426,18 @@ export default function App() {
                         <XAxis
                           xAxisId="months"
                           type="number"
-                          domain={['dataMin - 1', 'dataMax + 1']}
+                          domain={occupancyDomain}
                           orientation="top"
                           ticks={occupancyMonthTicks.map(t => t.value)}
                           tickFormatter={val => {
-                            const matched = occupancyMonthTicks.find(t => Math.abs(t.value - val) < 0.01)
+                            const matched = occupancyMonthTicks.find(t => Math.abs(t.value - val) < 0.1)
                             return matched ? matched.label : ''
                           }}
                           stroke="#475569"
                           tick={{ fill: '#a5b4fc', fontSize: 10, fontWeight: 'bold' }}
-                          tickLine={false}
-                          axisLine={false}
+                          tickLine={true}
+                          axisLine={true}
+                          height={30}
                         />
 
                         <YAxis
