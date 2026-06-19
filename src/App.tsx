@@ -866,6 +866,50 @@ export default function App() {
     return Math.max(0, Math.min(100, offset * 100))
   }, [complianceChartData, complianceMeta])
 
+  const complianceMatrixData = useMemo(() => {
+    const startWeek = complianceStartWeek !== null ? complianceStartWeek : globalWeekRange.minWeek
+    const endWeek = complianceEndWeek !== null ? complianceEndWeek : globalWeekRange.maxWeek
+    
+    if (startWeek === 0 || endWeek === 0 || complianceSelectedEtapas.length === 0) return []
+
+    const visibleWeeks: number[] = []
+    const range = Math.max(1, endWeek - startWeek + 1)
+    for (let i = 0; i < range; i++) {
+      visibleWeeks.push(startWeek + i)
+    }
+
+    const clientFilteredRecords = data.filter(r => {
+      return complianceClienteFilter === 'todos' || r.cliente === complianceClienteFilter
+    })
+
+    return complianceSelectedEtapas.map(etapa => {
+      const stageRecords = clientFilteredRecords.filter(r => normalizeEtapa(r.etapa) === etapa)
+      
+      const weeklyCompliance = visibleWeeks.map(absWeek => {
+        const progRecords = stageRecords.filter(r => {
+          const anoAtual = parseInt(r.anoAtual) || 0
+          const prog = parseInt(r.programado) || 0
+          return (anoAtual * 52 + prog) === absWeek
+        })
+        
+        const total = progRecords.length
+        const completed = progRecords.filter(r => r.statusGeral === 'Concluído').length
+        
+        return {
+          absWeek,
+          total,
+          completed,
+          pct: total > 0 ? parseFloat(((completed / total) * 100).toFixed(1)) : null
+        }
+      })
+      
+      return {
+        etapa,
+        weeklyCompliance
+      }
+    })
+  }, [complianceStartWeek, complianceEndWeek, complianceSelectedEtapas, complianceClienteFilter, globalWeekRange])
+
   // Compliance Custom Helpers
   const CustomDot = (props: any) => {
     const { cx, cy, value } = props
@@ -2085,6 +2129,74 @@ export default function App() {
                   </div>
                 )}
               </div>
+
+              {/* Matrix Table Panel */}
+              {complianceChartData.length > 0 && (
+                <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-6 flex flex-col gap-4 mt-6">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Matriz de Atendimento ao Plano por Etapa</h3>
+                    <p className="text-slate-400 text-xs mt-0.5">
+                      Visualização em matriz do percentual de atendimento por etapa produtiva em cada semana. Células coloridas indicam se o objetivo foi atingido (Meta: {complianceMeta}%).
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-900/10">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 bg-slate-900/30 uppercase tracking-wider text-[10px]">
+                          <th className="py-3 px-4 text-left font-semibold sticky left-0 bg-[#12141c] border-r border-slate-800 z-10 min-w-[150px]">Etapa</th>
+                          {complianceChartData.map(d => (
+                            <th key={d.absWeek} className="py-3 px-3 text-center font-semibold min-w-[70px]">{d.semanaShort}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {complianceMatrixData.map(row => (
+                          <tr key={row.etapa} className="border-b border-slate-800/60 hover:bg-slate-800/10 transition-colors">
+                            <td className="py-2.5 px-4 font-bold text-slate-300 sticky left-0 bg-[#12141c] border-r border-slate-800 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.3)]">{row.etapa}</td>
+                            {row.weeklyCompliance.map(cell => {
+                              const isAbove = cell.pct !== null && cell.pct >= complianceMeta
+                              return (
+                                <td key={cell.absWeek} className="py-2.5 px-2 text-center border-r border-slate-800/40 last:border-r-0">
+                                  {cell.pct !== null ? (
+                                    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[11px] font-bold min-w-[45px] ${
+                                      isAbove ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                    }`}>
+                                      {cell.pct}%
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-600 font-medium">-</span>
+                                  )}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                        {/* Summary / Consolidado Row */}
+                        <tr className="border-t border-slate-800 bg-slate-900/20 font-semibold">
+                          <td className="py-3 px-4 text-white font-extrabold sticky left-0 bg-[#12141c] border-r border-slate-800 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.3)]">Consolidado</td>
+                          {complianceChartData.map(d => {
+                            const isAbove = d.Atendimento !== null && d.Atendimento >= complianceMeta
+                            return (
+                              <td key={d.absWeek} className="py-3 px-2 text-center border-r border-slate-800/40 last:border-r-0">
+                                {d.Atendimento !== null ? (
+                                  <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[11px] font-extrabold min-w-[45px] ${
+                                    isAbove ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' : 'bg-red-500/20 text-red-300 border border-red-400/30'
+                                  }`}>
+                                    {d.Atendimento}%
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-600">-</span>
+                                )}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </main>
